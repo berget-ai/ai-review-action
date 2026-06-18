@@ -13,7 +13,7 @@ import {
   SettingsManager,
   type Skill,
   type ResourceDiagnostic,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 import type { BaseConfig } from './types.js';
 
 type RunAgentParams = {
@@ -77,7 +77,13 @@ export function loadDoraSkill({ workingDir }: { workingDir: string }): Skill | n
       'Query codebase using dora CLI for code intelligence, symbol definitions, dependencies, and architectural analysis',
     filePath: skillPath,
     baseDir: join(workingDir, '.dora', 'docs'),
-    source: 'action',
+    sourceInfo: {
+      path: skillPath,
+      source: 'action',
+      scope: 'project',
+      origin: 'top-level',
+      baseDir: join(workingDir, '.dora', 'docs'),
+    },
     disableModelInvocation: false,
   };
 }
@@ -94,7 +100,13 @@ export function loadObiSkill({ actionPath }: { actionPath: string }): Skill | nu
       'Query Obsidian vaults via obi CLI for documentation, architecture notes, and project conventions',
     filePath: skillPath,
     baseDir: join(actionPath, 'skills', 'obi'),
-    source: 'action',
+    sourceInfo: {
+      path: skillPath,
+      source: 'action',
+      scope: 'project',
+      origin: 'top-level',
+      baseDir: join(actionPath, 'skills', 'obi'),
+    },
     disableModelInvocation: false,
   };
 }
@@ -112,7 +124,7 @@ export async function runAgent({
     ? AuthStorage.inMemory({ [providerName]: { type: 'api_key', key: config.apiKey } })
     : AuthStorage.create();
 
-  const modelRegistry = new ModelRegistry(authStorage);
+  const modelRegistry = ModelRegistry.inMemory(authStorage);
   const model = modelRegistry.find(providerName, modelId);
   if (!model) throw new Error(`Model not found: ${providerName}/${modelId}`);
 
@@ -173,7 +185,7 @@ export async function runAgent({
     authStorage,
     modelRegistry,
     resourceLoader,
-    tools: [createReadTool(config.workingDir), createBashTool(config.workingDir)],
+    tools: ['read', 'bash'],
     sessionManager: SessionManager.inMemory(),
     settingsManager,
   });
