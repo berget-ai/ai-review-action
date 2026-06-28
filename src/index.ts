@@ -38,6 +38,62 @@ function isOwnerOrMember({ association }: { association: string }): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// pull_request event -> automatic review
+// ---------------------------------------------------------------------------
+
+async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<void> {
+  const payload = github.context.payload;
+  const pr = payload.pull_request;
+
+  if (!pr) {
+    core.info('Skipping: no pull_request in payload');
+    return;
+  }
+
+  // Skip drafts unless explicitly reviewed
+  if (pr.draft) {
+    core.info('Skipping: PR is a draft');
+    return;
+  }
+
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt } = getBaseInputs();
+  const octokit2 = github.getOctokit(token);
+  const ctx = github.context;
+
+  core.info(`Trigger: automatic review | PR #${pr.number} | ${pr.head.ref} → ${pr.base.ref}`);
+
+  const reviewConfig: ReviewConfig = {
+    prNumber: pr.number,
+    baseBranch: pr.base.ref,
+    headBranch: pr.head.ref,
+    repoOwner: ctx.repo.owner,
+    repoName: ctx.repo.repo,
+    model,
+    apiKey,
+    extraPrompt: core.getInput('extra_prompt') || '',
+    message: '',
+    workingDir,
+    useDora: core.getInput('use_dora') !== 'false',
+    systemPromptPath: core.getInput('system_prompt') || '',
+    reviewTemplatePath: core.getInput('review_template') || '',
+    actionPath,
+    obsidianVaultName,
+    obsidianPrompt,
+  };
+
+  const body = await runReview({ config: reviewConfig });
+  const wrapped = wrapReviewComment({ body, model, prNumber: reviewConfig.prNumber });
+
+  await octokit2.rest.issues.createComment({
+    ...ctx.repo,
+    issue_number: reviewConfig.prNumber,
+    body: wrapped,
+  });
+
+  core.info('Review posted');
+}
+
+// ---------------------------------------------------------------------------
 // issue_comment on a PR -> review or inline (PR-level comment only)
 // ---------------------------------------------------------------------------
 
@@ -397,6 +453,12 @@ async function run(): Promise<void> {
     const { eventName, payload } = github.context;
 
     core.info(`Event: ${eventName}`);
+
+    // pull_request event -> automatic review
+    if (eventName === 'pull_request' && payload.pull_request) {
+      await handlePullRequest({ octokit });
+      return;
+    }
 
     // PR-level comment -> review
     if (eventName === 'issue_comment' && payload.issue?.pull_request) {
