@@ -124,9 +124,11 @@ export async function runAgent({
     ? AuthStorage.inMemory({ [providerName]: { type: 'api_key', key: config.apiKey } })
     : AuthStorage.create();
 
-  const modelRegistry = ModelRegistry.inMemory(authStorage);
+  // Use ModelRegistry.create() (not inMemory) so it reads ~/.pi/agent/models.json
+  // and picks up custom providers like Berget AI.
+  const modelRegistry = ModelRegistry.create(authStorage);
   const model = modelRegistry.find(providerName, modelId);
-  if (!model) throw new Error(`Model not found: ${providerName}/${modelId}`);
+  if (!model) throw new Error(`Model not found: ${providerName}/${modelId}. Ensure ~/.pi/agent/models.json is configured with this provider, or use --list-models to see available models.`);
 
   const agentDir = getAgentDir();
   core.info(`Agent directory: ${agentDir}`);
