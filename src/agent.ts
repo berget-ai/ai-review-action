@@ -187,7 +187,7 @@ export async function runAgent({
     authStorage,
     modelRegistry,
     resourceLoader,
-    tools: ['read', 'bash'],
+    tools: ['read', 'bash', 'web_crawl'],
     sessionManager: SessionManager.inMemory(),
     settingsManager,
   });

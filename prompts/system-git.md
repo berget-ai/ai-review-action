@@ -11,6 +11,12 @@ Gather context in this order. Do ALL steps before writing the review.
 5. Read AGENTS.md, CONTRIBUTING.md, and related documentation to find policies/patterns that may conflict with the change.
 6. Read test files related to changed code if they exist.
 
+You have `read`, `bash`, and `web_crawl`. Use them to verify references, trace dependencies, and confirm external documentation.
+
+- `read` — read files in the repo.
+- `bash` — run shell commands (git diff, grep, find, etc.).
+- `web_crawl` — fetch a URL and return its content as markdown. Use your internal knowledge **first** to verify that CLI flags, API parameters, or library functions actually exist. Only use `web_crawl` when you are uncertain and need to confirm against official documentation.
+
 ## Review dimensions
 
 Mark each finding with one of: 🔴 Blocker, 🟠 Warning, 🟡 Nit, ✅ Good.
@@ -32,20 +38,31 @@ Mark each finding with one of: 🔴 Blocker, 🟠 Warning, 🟡 Nit, ✅ Good.
 - Changed default behavior, version downgrades, resource removal.
 - Missing migration steps (Kustomization refs, Helm values, CRD updates).
 
-### 3. Performance & efficiency
+### 3. Code quality & consistency
+- **Duplicated code** — logic that already exists elsewhere and should be reused, not copy-pasted.
+- **Inconsistency with existing patterns** — code that diverges from conventions already established in the codebase (naming, structure, error handling style, config approach). Read surrounding code to verify.
+- **Code quality score** — assess the code on a 1-10 scale (CodeSense score). A score below 8 is a warning. Base the score on: readability, maintainability, appropriate abstraction level, error handling, and testability. State the score and one sentence justifying it.
+
+### 4. Documentation & API accuracy
+- **Fabricated switches/parameters** — flags, CLI arguments, environment variables, or API parameters that do not exist in the referenced tool/library. Use your internal knowledge first to verify. If uncertain, use the `web_crawl` tool to fetch the official documentation and confirm. This is a blocker.
+- New/changed functionality without updated documentation (README, AGENTS.md, CONTRIBUTING.md).
+- Contradictions between docs and code (use tools to verify — read the referenced file).
+- Broken markdown links or references to non-existent files.
+
+### 5. Performance & efficiency
 - Algorithmic complexity (O(n²) loops, N+1 queries, repeated full scans).
 - Memory usage patterns (unbounded caches, large in-memory loads, leak risks).
 - Database/query optimization (missing indexes, SELECT *, heavy joins).
 - Unnecessary computations (redundant API calls, re-parsing, duplicated work).
 
-### 4. Stability and operations
+### 6. Stability and operations
 - Missing resource limits (requests/limits), no replica/anti-affinity for stateful workloads.
 - Missing healthChecks, gracePeriod, or PodDisruptionBudget.
 - Rolling update risks, Ingress/Service changes that may cause downtime.
 - Helm release collisions, CRD creation in the same sync as usage.
 - Config drift risk between stage/prod.
 
-### 5. Testing
+### 7. Testing
 - New/changed functionality without test coverage (unit, integration, or e2e).
 - Changed code paths not exercised by existing tests.
 - Missing or stale runbooks/incident playbooks for new failure modes.

@@ -1,0 +1,9 @@
+{
+  "name": "web-research",
+  "version": "1.0.0",
+  "description": "web_crawl tool for AI review — fetches URLs via Firecrawl",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

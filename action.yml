@@ -145,6 +145,19 @@ runs:
         chmod 600 ~/.pi/agent/models.json
         jq empty ~/.pi/agent/models.json
 
+    - name: Register web_crawl extension
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p ~/.pi/agent
+        cat > ~/.pi/agent/settings.json <<'JSON'
+        {
+          "packages": [
+            { "source": "${{ github.action_path }}/extensions/web-research" }
+          ]
+        }
+        JSON
+
     - name: Hash action lockfile
       id: action-lockfile-hash
       shell: bash
