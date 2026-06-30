@@ -11,6 +11,7 @@ import {
   wrapIssueComment,
   wrapDiscussionComment,
 } from './template.js';
+import { extractFindings, formatFindingComment } from './inline-findings.js';
 import type { ReviewConfig, InlineCommentConfig, IssueConfig, DiscussionConfig } from './types.js';
 
 type Octokit = ReturnType<typeof github.getOctokit>;
@@ -40,6 +41,57 @@ function isOwnerOrMember({ association }: { association: string }): boolean {
 // ---------------------------------------------------------------------------
 // pull_request event -> automatic review
 // ---------------------------------------------------------------------------
+
+/**
+ * Post the review body as either:
+ *   - a pull request review with inline line comments (when findings exist)
+ *   - a plain issue comment (when no inline findings)
+ */
+async function postReview({
+  octokit,
+  prNumber,
+  body,
+  model,
+  headSha,
+}: {
+  octokit: Octokit;
+  prNumber: number;
+  body: string;
+  model: string;
+  headSha?: string;
+}): Promise<void> {
+  const ctx = github.context;
+  const { findings, bodyWithoutFindings } = extractFindings(body);
+  const summary = wrapReviewComment({ body: bodyWithoutFindings, model, prNumber });
+
+  if (findings.length === 0 || !headSha) {
+    await octokit.rest.issues.createComment({
+      ...ctx.repo,
+      issue_number: prNumber,
+      body: summary,
+    });
+    core.info('Review posted as issue comment (no inline findings)');
+    return;
+  }
+
+  const comments = findings.map((f) => ({
+    path: f.file,
+    line: f.line,
+    side: 'RIGHT' as const,
+    body: formatFindingComment(f),
+  }));
+
+  await octokit.rest.pulls.createReview({
+    ...ctx.repo,
+    pull_number: prNumber,
+    commit_id: headSha,
+    body: summary,
+    event: 'COMMENT',
+    comments,
+  });
+
+  core.info(`Review posted with ${comments.length} inline comments`);
+}
 
 async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<void> {
   const payload = github.context.payload;
@@ -82,12 +134,13 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
   };
 
   const body = await runReview({ config: reviewConfig });
-  const wrapped = wrapReviewComment({ body, model, prNumber: reviewConfig.prNumber });
 
-  await octokit2.rest.issues.createComment({
-    ...ctx.repo,
-    issue_number: reviewConfig.prNumber,
-    body: wrapped,
+  await postReview({
+    octokit: octokit2,
+    prNumber: reviewConfig.prNumber,
+    body,
+    model,
+    headSha: pr.head.sha,
   });
 
   core.info('Review posted');
@@ -153,12 +206,13 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
     };
 
     const body = await runReview({ config: reviewConfig });
-    const wrapped = wrapReviewComment({ body, model, prNumber: reviewConfig.prNumber });
 
-    await octokit2.rest.issues.createComment({
-      ...ctx.repo,
-      issue_number: reviewConfig.prNumber,
-      body: wrapped,
+    await postReview({
+      octokit: octokit2,
+      prNumber: reviewConfig.prNumber,
+      body,
+      model,
+      headSha: pr.head.sha,
     });
 
     core.info('Review posted');

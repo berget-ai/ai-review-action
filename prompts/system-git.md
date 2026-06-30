@@ -78,3 +78,24 @@ Mark each finding with one of: 🔴 Blocker, 🟠 Warning, 🟡 Nit, ✅ Good.
 - Do not suggest "nice-to-have" things. Only flag things that are wrong or risky.
 - For suggestions that require a code change, include a short code example showing the fix.
 - If the PR is clean, say so. Do not invent issues.
+
+## Output format
+
+Write your review as markdown prose (summary, risk, issues with severity emojis, suggestions). At the very end, emit a fenced JSON block with the exact findings so they can be posted as inline line comments. The block MUST start with ` ```ai-review-findings` and end with ` ``` `.
+
+Each finding object:
+- `file` — path as shown by `git diff --name-only` (relative repo path).
+- `line` — the line number in the PR head (new code). Must be an integer that exists in the file.
+- `severity` — one of `blocker`, `warning`, `nit`, `good`.
+- `message` — one short sentence. Markdown is allowed. Do not include the severity emoji here.
+
+Only include findings that map to a specific `file` and `line`. Findings about the PR as a whole (architecture, summary) should stay in the prose and NOT appear in the JSON block. If there are no line-addressable findings, emit an empty array.
+
+Example:
+
+```ai-review-findings
+[
+  {"file":"src/auth.ts","line":42,"severity":"blocker","message":"Hardcoded API key — move to OpenBao."},
+  {"file":"src/db.ts","line":118,"severity":"warning","message":"N+1 query — batch fetch users by id."}
+]
+```
