@@ -71,7 +71,8 @@ jobs:
       - uses: berget-ai/ai-review-action@main
         with:
           api_key: ${{ secrets.BERGET_API_KEY }}
-          # pi_model: 'berget/zai-org/GLM-5.2'   # default Berget model
+          # Optionally specify a different Berget model:
+          # pi_model: 'berget/zai-org/GLM-5.2'
 ```
 
 The action uses the Berget API (`https://api.berget.ai/v1`) by default. No extra configuration is needed.
