@@ -64,12 +64,16 @@ async function postReview({
   const ctx = github.context;
   const { findings, bodyWithoutFindings } = extractFindings(body);
 
-  if (!bodyWithoutFindings.trim()) {
-    core.warning('Skipping review: agent produced no review body. No comment posted.');
+  // Skip only when the agent produced nothing usable at all. If the agent
+  // emitted inline findings without a prose summary, still post the findings
+  // with a fallback summary so they are not dropped.
+  if (!bodyWithoutFindings.trim() && findings.length === 0) {
+    core.warning('Skipping review: agent produced no review body and no findings. No comment posted.');
     return;
   }
 
-  const summary = wrapReviewComment({ body: bodyWithoutFindings, model, prNumber });
+  const summaryBody = bodyWithoutFindings.trim() || '_AI review produced inline findings only._';
+  const summary = wrapReviewComment({ body: summaryBody, model, prNumber });
 
   if (findings.length === 0 || !headSha) {
     await octokit.rest.issues.createComment({

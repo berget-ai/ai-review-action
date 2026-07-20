@@ -136,11 +136,11 @@ export async function runAgent({
   // Use SettingsManager.create to read from ~/.pi/agent/settings.json
   const settingsManager = SettingsManager.create(config.workingDir, agentDir);
 
-  // Merge manually loaded skills (dora, obi) with package skills.
-  // By default, auto-discovered skills from .agents/skills/ and .pi/skills/ in
-  // the working directory are dropped — they bloat the system prompt and turn
-  // reviews into no-ops on repos that ship large agent skill trees (see MCP-181).
-  // Set config.autoDiscoverSkills to true to keep them.
+  // Load manually loaded skills (dora, obi); optionally merge auto-discovered
+  // skills from .agents/skills/ and .pi/skills/ in the working directory.
+  // By default the auto-discovered set is dropped — it bloats the system
+  // prompt and turns reviews into no-ops on repos that ship large agent
+  // skill trees (see MCP-181). Set config.autoDiscoverSkills to keep them.
   const skillsOverride = (result: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
     const base = config.autoDiscoverSkills ? result.skills : [];
     const mergedSkills = [...base, ...skills];
