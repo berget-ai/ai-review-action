@@ -15,6 +15,7 @@ export type BaseConfig = {
   actionPath: string;
   obsidianVaultName: string;
   obsidianPrompt: string;
+  autoDiscoverSkills: boolean;
 };
 
 export type ReviewConfig = BaseConfig & {
