@@ -6,6 +6,7 @@ Mention `@pi` anywhere on GitHub to trigger a response:
 
 | Where | Trigger | What happens |
 |---|---|---|
+| Pull request | _(automatic)_ | Structured code review posted on the PR |
 | PR comment | `@pi review` | Structured code review posted on the PR |
 | PR file comment | `@pi <question>` | Reads the file in context, replies in the thread |
 | Issue | `@pi <question>` | Explores the codebase, replies in the issue |
@@ -76,6 +77,60 @@ jobs:
 ```
 
 The action uses the Berget API (`https://api.berget.ai/v1`) by default. No extra configuration is needed.
+
+#### Automatic review on every PR
+
+```yaml
+# .github/workflows/ai-review.yml
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: AI Review
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@pi review') &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: >-
+            ${{
+              github.event.pull_request.head.sha ||
+              (github.event.issue.pull_request && format('refs/pull/{0}/merge', github.event.issue.number)) ||
+              github.sha
+            }}
+
+      - uses: berget-ai/ai-review-action@main
+        with:
+          api_key: ${{ secrets.BERGET_API_KEY }}
+          use_dora: 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
 
 #### Alternative: pi auth.json
 
@@ -162,6 +217,7 @@ Thinking about moving all rendering to the edge.
 | `obsidian_token` | -- | GitHub token for private vault repos (defaults to `GITHUB_TOKEN`). |
 | `obsidian_prompt` | -- | Additional instructions for using the obsidian vault via `obi` CLI. |
 | `exa_api_key` | -- | Exa AI API key for web search via the `exa_search` tool. |
+| `auto_discover_skills` | `false` | Discover and load skills from `.agents/skills/` and `.pi/skills/` in the repo. Default false — only manually loaded skills (dora, obi) are used. |
 
 Either `api_key` or `pi_auth` must be provided. When both are set, `api_key` takes precedence.
 
@@ -207,7 +263,7 @@ Either `api_key` or `pi_auth` must be provided. When both are set, `api_key` tak
 
 ### Without dora
 
-Uses `git diff`, `grep`, `find`, and direct file reading only. Faster setup, no indexing.
+Uses pre-collected diff context, `grep`, `find`, and direct file reading only. Faster setup, no indexing.
 
 ```yaml
 - uses: berget-ai/ai-review-action@main
@@ -366,14 +422,17 @@ On a warm run (same commit, same deps), only the dora agent itself runs -- all i
 
 1. Validates the commenter is a repo owner, member, or collaborator.
 2. Routes based on the GitHub event:
+   - `pull_request` → automatic review on every PR
    - `issue_comment` on a PR → `@pi review` triggers a full review
    - `pull_request_review_comment` → reads the file, replies to the thread
    - `issues` / `issue_comment` on a plain issue → explores codebase, replies in the issue
    - `discussion` / `discussion_comment` → explores codebase, replies in the discussion
 3. If dora is enabled: installs dora + SCIP indexer (cached), runs `dora init` + `dora index` (cached per commit).
-4. Loads extensions from `~/.pi/agent/settings.json` if configured (cached by commit SHA).
-5. Runs the pi agent with bash, read, and any extension tools. The agent uses dora commands, extension tools (like `exa_search`), `git diff`, `grep`, `find`, and direct file reading to gather context.
-6. Posts the response via the appropriate GitHub API (REST for PRs/issues, GraphQL for discussions).
+4. Loads extensions from `~/.pi/agent/settings.json` if configured (cached by commit SHA). Skills from `.agents/skills/` are **not** loaded by default — set `auto_discover_skills: 'true'` to include them.
+5. Pre-collects the diff, changed file contents, and branch status (behind base, conflict files) into the user prompt so the agent starts with full context.
+6. Runs the pi agent with `read`, `bash`, and `web_crawl` tools. Tools are used to **supplement** the pre-collected context — trace references, read sibling/test files, verify external docs — not to rebuild it.
+7. Extracts inline findings from the `ai-review-findings` JSON block in the agent's response and posts them as line comments via `pulls.createReview`. Falls back to an issue comment when no findings are present.
+8. Posts the response via the appropriate GitHub API (REST for PRs/issues, GraphQL for discussions).
 
 ## Requirements
 
