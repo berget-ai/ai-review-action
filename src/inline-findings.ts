@@ -16,10 +16,15 @@ const SEVERITY_EMOJI: Record<Severity, string> = {
   good: '✅',
 };
 
-const FENCE_PATTERN = /```ai-review-findings\s*\n([\s\S]*?)\n```\s*$/;
+const FENCE_PATTERN = /```ai-review-findings[\t ]*\r?\n([\s\S]*?)\r?\n```[\t ]*/g;
 
 /**
  * Extract the JSON findings block from the review body.
+ *
+ * Matches the LAST ```ai-review-findings fenced code block anywhere in the body.
+ * The model sometimes appends prose after the block (e.g. "Let me know if..."),
+ * and the block does not have to be the very last thing in the message.
+ *
  * Returns `{ findings, bodyWithoutFindings }`. If no block is present,
  * `findings` is an empty array and `bodyWithoutFindings` is the original body.
  */
@@ -27,7 +32,10 @@ export function extractFindings(body: string): {
   findings: Finding[];
   bodyWithoutFindings: string;
 } {
-  const match = body.match(FENCE_PATTERN);
+  // Find all matches and take the last one; the model occasionally emits a
+  // reference snippet in the prose before the real block at the end.
+  const matches = [...body.matchAll(FENCE_PATTERN)];
+  const match = matches.length > 0 ? matches[matches.length - 1] : null;
   if (!match) {
     return { findings: [], bodyWithoutFindings: body };
   }
@@ -38,12 +46,12 @@ export function extractFindings(body: string): {
     parsed = JSON.parse(jsonText);
   } catch (err) {
     core.warning(`Failed to parse ai-review-findings JSON: ${(err as Error).message}`);
-    return { findings: [], bodyWithoutFindings: body.slice(0, match.index).trimEnd() };
+    return { findings: [], bodyWithoutFindings: stripBlock(body, match.index!, match[0].length) };
   }
 
   if (!Array.isArray(parsed)) {
     core.warning('ai-review-findings JSON is not an array');
-    return { findings: [], bodyWithoutFindings: body.slice(0, match.index).trimEnd() };
+    return { findings: [], bodyWithoutFindings: stripBlock(body, match.index!, match[0].length) };
   }
 
   const findings: Finding[] = [];
@@ -73,8 +81,12 @@ export function extractFindings(body: string): {
   core.info(`Extracted ${findings.length} inline findings from review`);
   return {
     findings,
-    bodyWithoutFindings: body.slice(0, match.index).trimEnd(),
+    bodyWithoutFindings: stripBlock(body, match.index!, match[0].length),
   };
+}
+
+function stripBlock(body: string, index: number, length: number): string {
+  return (body.slice(0, index) + body.slice(index + length)).replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**

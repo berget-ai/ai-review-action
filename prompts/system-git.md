@@ -81,7 +81,7 @@ Mark each finding with one of: 🔴 Blocker, 🟠 Warning, 🟡 Nit, ✅ Good.
 
 ## Output format
 
-Write your review as markdown prose (summary, risk, issues with severity emojis, suggestions). At the very end, emit a fenced JSON block with the exact findings so they can be posted as inline line comments. The block MUST start with ` ```ai-review-findings` and end with ` ``` `.
+Write your review as markdown prose (summary, risk, issues with severity emojis, suggestions). Then emit a fenced JSON block with the exact findings so they can be posted as inline line comments. This block is MANDATORY — without it, no inline line comments are posted on the PR. The block MUST start with ` ```ai-review-findings` and end with ` ``` `. Always emit it, even if you emit an empty array.
 
 Each finding object:
 - `file` — path as shown by `git diff --name-only` (relative repo path).
