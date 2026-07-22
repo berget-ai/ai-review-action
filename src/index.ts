@@ -26,12 +26,13 @@ function getBaseInputs() {
   const workingDir = process.env.GITHUB_WORKSPACE ?? process.cwd();
   const obsidianVaultName = process.env.INPUT_OBSIDIAN_VAULT_NAME || '';
   const obsidianPrompt = process.env.INPUT_OBSIDIAN_PROMPT || '';
+  const autoDiscoverSkills = (process.env.INPUT_AUTO_DISCOVER_SKILLS || 'false').toLowerCase() === 'true';
 
   if (!apiKey && !core.getInput('pi_auth')) {
     throw new Error('Either api_key or pi_auth must be provided');
   }
 
-  return { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt };
+  return { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills };
 }
 
 function isOwnerOrMember({ association }: { association: string }): boolean {
@@ -62,7 +63,17 @@ async function postReview({
 }): Promise<void> {
   const ctx = github.context;
   const { findings, bodyWithoutFindings } = extractFindings(body);
-  const summary = wrapReviewComment({ body: bodyWithoutFindings, model, prNumber });
+
+  // Skip only when the agent produced nothing usable at all. If the agent
+  // emitted inline findings without a prose summary, still post the findings
+  // with a fallback summary so they are not dropped.
+  if (!bodyWithoutFindings.trim() && findings.length === 0) {
+    core.warning('Skipping review: agent produced no review body and no findings. No comment posted.');
+    return;
+  }
+
+  const summaryBody = bodyWithoutFindings.trim() || '_AI review produced inline findings only._';
+  const summary = wrapReviewComment({ body: summaryBody, model, prNumber });
 
   if (findings.length === 0 || !headSha) {
     await octokit.rest.issues.createComment({
@@ -108,7 +119,7 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills } = getBaseInputs();
   const octokit2 = github.getOctokit(token);
   const ctx = github.context;
 
@@ -131,6 +142,7 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
     actionPath,
     obsidianVaultName,
     obsidianPrompt,
+    autoDiscoverSkills,
   };
 
   const body = await runReview({ config: reviewConfig });
@@ -164,7 +176,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills } = getBaseInputs();
   const octokit2 = github.getOctokit(token);
   const ctx = github.context;
 
@@ -203,6 +215,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
       actionPath,
       obsidianVaultName,
       obsidianPrompt,
+      autoDiscoverSkills,
     };
 
     const body = await runReview({ config: reviewConfig });
@@ -251,7 +264,7 @@ async function handleInlineComment({ octokit }: { octokit: Octokit }): Promise<v
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills } = getBaseInputs();
   const octokit2 = github.getOctokit(token);
   const ctx = github.context;
 
@@ -285,6 +298,7 @@ async function handleInlineComment({ octokit }: { octokit: Octokit }): Promise<v
     actionPath,
     obsidianVaultName,
     obsidianPrompt,
+    autoDiscoverSkills,
   };
 
   core.info(`Trigger: comment | file: ${inlineConfig.filePath} | message: ${trigger.message || '(none)'}`);
@@ -341,7 +355,7 @@ async function handleIssue({ octokit }: { octokit: Octokit }): Promise<void> {
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills } = getBaseInputs();
   const octokit2 = github.getOctokit(token);
 
   // React on the comment or the issue itself
@@ -368,6 +382,7 @@ async function handleIssue({ octokit }: { octokit: Octokit }): Promise<void> {
     actionPath,
     obsidianVaultName,
     obsidianPrompt,
+    autoDiscoverSkills,
   };
 
   core.info(`Trigger: issue #${issueConfig.issueNumber} | message: ${trigger.message || '(none)'}`);
@@ -411,7 +426,7 @@ async function handleDiscussion({ octokit }: { octokit: Octokit }): Promise<void
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills } = getBaseInputs();
   const octokit2 = github.getOctokit(token);
 
   const discussion = payload.discussion;
@@ -431,6 +446,7 @@ async function handleDiscussion({ octokit }: { octokit: Octokit }): Promise<void
     actionPath,
     obsidianVaultName,
     obsidianPrompt,
+    autoDiscoverSkills,
   };
 
   core.info(`Trigger: discussion #${discussionConfig.discussionNumber} | message: ${trigger.message || '(none)'}`);
