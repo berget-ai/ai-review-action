@@ -16,7 +16,7 @@ const SEVERITY_EMOJI: Record<Severity, string> = {
   good: '✅',
 };
 
-const FENCE_PATTERN = /```ai-review-findings\s*\n([\s\S]*?)\n```/g;
+const FENCE_PATTERN = /```ai-review-findings[\t ]*\r?\n([\s\S]*?)\r?\n```[\t ]*/g;
 
 /**
  * Extract the JSON findings block from the review body.
