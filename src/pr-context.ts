@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import * as core from '@actions/core';
@@ -22,36 +22,27 @@ const MAX_FILE_BYTES = 30_000;
 const MAX_DIFF_BYTES = 60_000;
 const MAX_CONTEXT_BYTES = 80_000;
 
-export function gatherPrContext({ workingDir, baseBranch }: PrContextOptions): PrContext {
-  const diff = runGit(workingDir, [
-    'diff',
-    `${baseBranch}...HEAD`,
-    '--',
-    ':!*.lock',
-    ':!*lock.json',
-    ':!*.svg',
-    ':!*.png',
-  ]);
+const DIFF_EXCLUDES = [':!*.lock', ':!*lock.json', ':!*.svg', ':!*.png'];
 
-  const changedFiles = runGit(workingDir, [
-    'diff',
-    `${baseBranch}...HEAD`,
-    '--name-only',
-  ])
+export function gatherPrContext({ workingDir, baseBranch }: PrContextOptions): PrContext {
+  const diffArgs = ['diff', `${baseBranch}...HEAD`, '--', ...DIFF_EXCLUDES];
+  const diff = runGit(workingDir, diffArgs);
+
+  const changedFiles = runGit(workingDir, ['diff', `${baseBranch}...HEAD`, '--name-only', '--', ...DIFF_EXCLUDES])
     .split('\n')
     .map((f) => f.trim())
     .filter(Boolean);
 
-  core.info(`PR context: ${changedFiles.length} changed files, ${diff.length} diff bytes`);
+  core.info(`PR context: ${changedFiles.length} changed files, ${byteLength(diff)} diff bytes`);
 
   const fileContents = selectFilesForContext(workingDir, changedFiles);
   const { behindBase, conflictingFiles, canAutoMerge } = checkBranchStatus(workingDir, baseBranch, changedFiles);
 
-  const totalBytes = diff.length + fileContents.reduce((s, f) => s + f.content.length, 0);
+  const totalBytes = byteLength(diff) + fileContents.reduce((s, f) => s + byteLength(f.content), 0);
   if (totalBytes > MAX_CONTEXT_BYTES) {
     core.info(`Context exceeds ${MAX_CONTEXT_BYTES} bytes; trimming full file content`);
     const trimmed = fileContents.slice(0, Math.floor(fileContents.length / 2));
-    const trimmedTotal = diff.length + trimmed.reduce((s, f) => s + f.content.length, 0);
+    const trimmedTotal = byteLength(diff) + trimmed.reduce((s, f) => s + byteLength(f.content), 0);
     if (trimmedTotal > MAX_CONTEXT_BYTES) {
       core.info('Even trimmed context too large; using diff only');
       return { diff: truncate(diff, MAX_DIFF_BYTES), changedFiles, fileContents: [], behindBase, conflictingFiles, canAutoMerge };
@@ -87,12 +78,7 @@ function checkBranchStatus(
     return { behindBase: [], conflictingFiles: [], canAutoMerge: true };
   }
 
-  // Files modified on baseBranch since the merge base.
-  const baseFilesRaw = runGit(workingDir, [
-    'diff',
-    `HEAD...${baseBranch}`,
-    '--name-only',
-  ]);
+  const baseFilesRaw = runGit(workingDir, ['diff', `HEAD...${baseBranch}`, '--name-only']);
   const baseChanged = new Set(
     baseFilesRaw
       .split('\n')
@@ -106,7 +92,6 @@ function checkBranchStatus(
     core.info(`Potential conflict files (changed on both branches): ${conflictingFiles.join(', ')}`);
   }
 
-  // Dry-run merge to detect actual conflicts without touching the working tree.
   const canAutoMerge = dryRunMerge(workingDir, baseBranch);
   if (!canAutoMerge) {
     core.info('Dry-run merge reports conflicts');
@@ -116,9 +101,6 @@ function checkBranchStatus(
 }
 
 function dryRunMerge(workingDir: string, baseBranch: string): boolean {
-  // git merge-tree --write-tree <branch1> <branch2> (git 2.38+).
-  // Exit 0 + tree OID = clean merge. Exit 1 + conflict info = conflicts.
-  // Other exit = unsupported git version or error; fall back to overlap heuristic.
   const { stdout, status } = runGitAllowFail(workingDir, ['merge-tree', '--write-tree', '--messages', baseBranch, 'HEAD']);
   if (status === 0) return true;
   if (status === 1) return !stdout.includes('CONFLICT');
@@ -136,7 +118,7 @@ function selectFilesForContext(
     if (!isTextFile(file)) continue;
     try {
       const full = readFileSync(join(workingDir, file), 'utf-8');
-      const content = full.length > MAX_FILE_BYTES ? full.slice(0, MAX_FILE_BYTES) + '\n… (truncated)' : full;
+      const content = byteLength(full) > MAX_FILE_BYTES ? full.slice(0, MAX_FILE_BYTES) + '\n… (truncated)' : full;
       result.push({ path: file, content });
     } catch (err) {
       core.info(`Could not read ${file}: ${(err as Error).message}`);
@@ -152,7 +134,7 @@ function isTextFile(path: string): boolean {
 
 function runGit(cwd: string, args: string[]): string {
   try {
-    return execSync(`git ${args.map(shellQuote).join(' ')}`, { cwd, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }).toString().trim();
+    return execFileSync('git', args, { cwd, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024 }).toString().trim();
   } catch (err) {
     core.warning(`git command failed: git ${args.join(' ')} — ${(err as Error).message}`);
     return '';
@@ -161,7 +143,7 @@ function runGit(cwd: string, args: string[]): string {
 
 function runGitAllowFail(cwd: string, args: string[]): { stdout: string; status: number | null } {
   try {
-    const stdout = execSync(`git ${args.map(shellQuote).join(' ')}`, { cwd, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
+    const stdout = execFileSync('git', args, { cwd, encoding: 'utf-8', maxBuffer: 50 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim();
     return { stdout, status: 0 };
   } catch (err) {
     const e = err as { stdout?: string; status?: number };
@@ -169,16 +151,18 @@ function runGitAllowFail(cwd: string, args: string[]): { stdout: string; status:
   }
 }
 
-function shellQuote(arg: string): string {
-  if (/^[\w@./:=+-]+$/.test(arg)) return arg;
-  return `'${arg.replace(/'/g, "'\\''")}'`;
+function byteLength(s: string): number {
+  return Buffer.byteLength(s, 'utf-8');
 }
 
 function truncate(s: string, max: number): string {
-  if (s.length <= max) return s;
+  if (byteLength(s) <= max) return s;
   const half = Math.floor((max - 50) / 2);
-  return s.slice(0, half) + `\n… (truncated ${s.length - max} bytes) …\n` + s.slice(s.length - half);
+  return s.slice(0, half) + `\n… (truncated ${byteLength(s) - max} bytes) …\n` + s.slice(s.length - half);
 }
+
+const FENCE = '```';
+const SAFER_FENCE = '``````````';
 
 export function buildContextPrompt(ctx: PrContext): string {
   const sections: string[] = ['Review this pull request.'];
@@ -231,12 +215,12 @@ export function buildContextPrompt(ctx: PrContext): string {
     }
   }
 
-  sections.push('', '### Diff', '', '```diff', truncate(ctx.diff, MAX_DIFF_BYTES), '```');
+  sections.push('', '### Diff', '', `${FENCE}diff`, truncate(ctx.diff, MAX_DIFF_BYTES), FENCE);
 
   if (ctx.fileContents.length > 0) {
     sections.push('', '### Changed file contents', '');
     for (const f of ctx.fileContents) {
-      sections.push('', `#### \`${f.path}\``, '', '```', f.content, '```');
+      sections.push('', `#### \`${f.path}\``, '', SAFER_FENCE, f.content, SAFER_FENCE);
     }
   } else {
     sections.push('', '_Full file contents were not pre-loaded (too many changed files or too large). Use \`read\` selectively for the specific lines you need._');
