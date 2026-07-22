@@ -72,6 +72,12 @@ Mark each finding with one of: 🔴 Blocker, 🟠 Warning, 🟡 Nit, ✅ Good.
 ### 8. Edge cases & data flow
 For each changed function, enumerate the partial states its inputs can be in (empty array, undefined optional, only-some-fields object, null where object expected) and trace what happens through each branch. Flag cases where the function returns early, drops data, or behaves differently when an input is empty-but-not-absent. Trace how the output flows to callers — what breaks downstream if the contract changes?
 
+### 9. Branch staleness & conflicts
+The branch status is in the user prompt. Use it to flag:
+- If the base branch has new commits that touch the same areas as this PR, check whether any of them make the PR redundant or change its requirements. Call this out with the commit reference.
+- If conflicts are reported, note a rebase is required.
+- If a dry-run merge succeeded but the same files were touched on both branches, check for semantic conflicts even if the textual merge is clean.
+
 ## Rules
 
 - Only report issues you can justify with evidence from the code or documentation.
