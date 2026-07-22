@@ -1,11 +1,12 @@
-# pi-action-runner
+# AI Review Action (Berget)
 
-GitHub Action that runs AI-powered automation using [pi](https://github.com/badlogic/pi-mono) and optionally [dora](https://github.com/butttons/dora) for code intelligence.
+GitHub Action that runs AI-powered automation using [pi](https://github.com/badlogic/pi-mono) and [Berget AI](https://berget.ai), with optional [dora](https://github.com/butttons/dora) code intelligence.
 
 Mention `@pi` anywhere on GitHub to trigger a response:
 
 | Where | Trigger | What happens |
 |---|---|---|
+| Pull request | _(automatic)_ | Structured code review posted on the PR |
 | PR comment | `@pi review` | Structured code review posted on the PR |
 | PR file comment | `@pi <question>` | Reads the file in context, replies in the thread |
 | Issue | `@pi <question>` | Explores the codebase, replies in the issue |
@@ -15,21 +16,20 @@ Only repository owners, members, and collaborators can trigger the action.
 
 ## Setup
 
-### 1. Add a secret
+### 1. Get a Berget API key
 
-**Option A: API key (recommended)** -- static, never expires.
+1. Sign up or log in at [berget.ai](https://berget.ai)
+2. Navigate to **API Keys** in your dashboard
+3. Create a new API key and copy it
 
-Add your provider API key as a repository secret (Settings > Secrets and variables > Actions). For example, `ANTHROPIC_KEY` or `OPENAI_KEY`.
+### 2. Add the secret to your repository
 
-**Option B: pi auth.json** -- uses your local pi OAuth session. May need periodic rotation.
+Go to **Settings > Secrets and variables > Actions** in your repository and add a new secret:
 
-```bash
-base64 -i ~/.pi/agent/auth.json | pbcopy
-```
+- **Name:** `BERGET_API_KEY`
+- **Value:** your Berget API key
 
-Add as `PI_AUTH` secret.
-
-### 2. Add the workflow
+### 3. Add the workflow
 
 ```yaml
 # .github/workflows/pi.yml
@@ -69,12 +69,78 @@ jobs:
               github.sha
             }}
 
-      - uses: butttons/pi-action-runner@main
+      - uses: berget-ai/ai-review-action@main
         with:
-          pi_auth: ${{ secrets.PI_AUTH }}
-          # api_key: ${{ secrets.ANTHROPIC_KEY }}
-          # pi_model: 'anthropic/claude-sonnet-4'
+          api_key: ${{ secrets.BERGET_API_KEY }}
+          # Optionally specify a different Berget model:
+          # pi_model: 'berget/zai-org/GLM-5.2'
 ```
+
+The action uses the Berget API (`https://api.berget.ai/v1`) by default. No extra configuration is needed.
+
+#### Automatic review on every PR
+
+```yaml
+# .github/workflows/ai-review.yml
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: AI Review
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@pi review') &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: >-
+            ${{
+              github.event.pull_request.head.sha ||
+              (github.event.issue.pull_request && format('refs/pull/{0}/merge', github.event.issue.number)) ||
+              github.sha
+            }}
+
+      - uses: berget-ai/ai-review-action@main
+        with:
+          api_key: ${{ secrets.BERGET_API_KEY }}
+          use_dora: 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+#### Alternative: pi auth.json
+
+If you prefer to use a local pi OAuth session instead of an API key:
+
+```bash
+base64 -i ~/.pi/agent/auth.json | pbcopy
+```
+
+Add as `PI_AUTH` secret and use `pi_auth: ${{ secrets.PI_AUTH }}` in the workflow.
 
 ## Usage
 
@@ -132,9 +198,11 @@ Thinking about moving all rendering to the edge.
 
 | Input | Default | Description |
 |---|---|---|
-| `api_key` | -- | API key for the model provider. Preferred over `pi_auth`. |
+| `api_key` | -- | API key for the model provider (e.g. your `BERGET_API_KEY`). Preferred over `pi_auth`. |
 | `pi_auth` | -- | Base64-encoded pi `auth.json`. Fallback when `api_key` is not set. |
-| `pi_model` | `opencode-go/kimi-k2.5` | Model in `provider/model-id` format. |
+| `pi_model` | `berget/zai-org/GLM-5.2` | Model in `provider/model-id` format. |
+| `provider_base_url` | `https://api.berget.ai/v1` | Base URL for the LLM provider API. Override to use a different endpoint. |
+| `provider_name` | `berget` | Provider name registered in `models.json`. Must match the prefix in `pi_model`. |
 | `use_dora` | `true` | Enable dora code intelligence. |
 | `dora_version` | `latest` | Dora CLI version tag. |
 | `scip_install` | `bun install -g @sourcegraph/scip-typescript` | SCIP indexer install command. Set to empty string to skip. |
@@ -149,6 +217,7 @@ Thinking about moving all rendering to the edge.
 | `obsidian_token` | -- | GitHub token for private vault repos (defaults to `GITHUB_TOKEN`). |
 | `obsidian_prompt` | -- | Additional instructions for using the obsidian vault via `obi` CLI. |
 | `exa_api_key` | -- | Exa AI API key for web search via the `exa_search` tool. |
+| `auto_discover_skills` | `false` | Discover and load skills from `.agents/skills/` and `.pi/skills/` in the repo. Default false — only manually loaded skills (dora, obi) are used. |
 
 Either `api_key` or `pi_auth` must be provided. When both are set, `api_key` takes precedence.
 
@@ -157,9 +226,9 @@ Either `api_key` or `pi_auth` must be provided. When both are set, `api_key` tak
 ### Monorepo with pnpm
 
 ```yaml
-- uses: butttons/pi-action-runner@main
+- uses: berget-ai/ai-review-action@main
   with:
-    pi_auth: ${{ secrets.PI_AUTH }}
+    api_key: ${{ secrets.BERGET_API_KEY }}
     project_lockfile: 'pnpm-lock.yaml'
     dora_pre_index: 'pnpm install --frozen-lockfile'
 ```
@@ -167,39 +236,39 @@ Either `api_key` or `pi_auth` must be provided. When both are set, `api_key` tak
 ### Large codebase (increase Node heap for dora indexing)
 
 ```yaml
-- uses: butttons/pi-action-runner@main
+- uses: berget-ai/ai-review-action@main
   with:
-    api_key: ${{ secrets.ANTHROPIC_KEY }}
+    api_key: ${{ secrets.BERGET_API_KEY }}
     dora_index_command: 'NODE_OPTIONS="--max-old-space-size=6144" dora index'
 ```
 
 ### Rust project
 
 ```yaml
-- uses: butttons/pi-action-runner@main
+- uses: berget-ai/ai-review-action@main
   with:
-    api_key: ${{ secrets.API_KEY }}
+    api_key: ${{ secrets.BERGET_API_KEY }}
     scip_install: 'cargo install rust-analyzer'
 ```
 
 ### Python project
 
 ```yaml
-- uses: butttons/pi-action-runner@main
+- uses: berget-ai/ai-review-action@main
   with:
-    api_key: ${{ secrets.API_KEY }}
+    api_key: ${{ secrets.BERGET_API_KEY }}
     scip_install: 'pip install scip-python'
     dora_pre_index: 'pip install -e .'
 ```
 
 ### Without dora
 
-Uses `git diff`, `grep`, `find`, and direct file reading only. Faster setup, no indexing.
+Uses pre-collected diff context, `grep`, `find`, and direct file reading only. Faster setup, no indexing.
 
 ```yaml
-- uses: butttons/pi-action-runner@main
+- uses: berget-ai/ai-review-action@main
   with:
-    api_key: ${{ secrets.API_KEY }}
+    api_key: ${{ secrets.BERGET_API_KEY }}
     use_dora: 'false'
 ```
 
@@ -213,9 +282,9 @@ Connect an Obsidian vault from another repo to give the agent access to document
 
 **Usage:**
 ```yaml
-- uses: butttons/pi-action-runner@main
+- uses: berget-ai/ai-review-action@main
   with:
-    api_key: ${{ secrets.API_KEY }}
+    api_key: ${{ secrets.BERGET_API_KEY }}
     obsidian_vault_repo: 'myorg/documentation'
     obsidian_vault_name: 'Docs'  # optional, defaults to repo name
     obsidian_token: ${{ secrets.OBSIDIAN_TOKEN }}  # required for private vaults
@@ -261,9 +330,9 @@ Extensions add custom tools to the agent. The action supports any pi-compatible 
     }
     EOF
 
-- uses: butttons/pi-action-runner@main
+- uses: berget-ai/ai-review-action@main
   with:
-    api_key: ${{ secrets.ANTHROPIC_KEY }}
+    api_key: ${{ secrets.BERGET_API_KEY }}
     exa_api_key: ${{ secrets.EXA_API_KEY }}
 ```
 
@@ -284,9 +353,20 @@ Once configured, the agent can use extension tools:
 ### Different model
 
 ```yaml
-- uses: butttons/pi-action-runner@main
+- uses: berget-ai/ai-review-action@main
+  with:
+    api_key: ${{ secrets.BERGET_API_KEY }}
+    pi_model: 'berget/zai-org/GLM-5.2'
+```
+
+To use a completely different provider, you can also override the base URL and provider name:
+
+```yaml
+- uses: berget-ai/ai-review-action@main
   with:
     api_key: ${{ secrets.ANTHROPIC_KEY }}
+    provider_base_url: 'https://api.anthropic.com/v1'
+    provider_name: 'anthropic'
     pi_model: 'anthropic/claude-sonnet-4'
 ```
 
@@ -303,9 +383,9 @@ The system prompt and output template for PR reviews are fully replaceable. Defa
 Point the inputs to your own files:
 
 ```yaml
-- uses: butttons/pi-action-runner@main
+- uses: berget-ai/ai-review-action@main
   with:
-    api_key: ${{ secrets.API_KEY }}
+    api_key: ${{ secrets.BERGET_API_KEY }}
     system_prompt: '.github/review-prompt.md'
     review_template: '.github/review-template.md'
 ```
@@ -342,14 +422,17 @@ On a warm run (same commit, same deps), only the dora agent itself runs -- all i
 
 1. Validates the commenter is a repo owner, member, or collaborator.
 2. Routes based on the GitHub event:
+   - `pull_request` → automatic review on every PR
    - `issue_comment` on a PR → `@pi review` triggers a full review
    - `pull_request_review_comment` → reads the file, replies to the thread
    - `issues` / `issue_comment` on a plain issue → explores codebase, replies in the issue
    - `discussion` / `discussion_comment` → explores codebase, replies in the discussion
 3. If dora is enabled: installs dora + SCIP indexer (cached), runs `dora init` + `dora index` (cached per commit).
-4. Loads extensions from `~/.pi/agent/settings.json` if configured (cached by commit SHA).
-5. Runs the pi agent with bash, read, and any extension tools. The agent uses dora commands, extension tools (like `exa_search`), `git diff`, `grep`, `find`, and direct file reading to gather context.
-6. Posts the response via the appropriate GitHub API (REST for PRs/issues, GraphQL for discussions).
+4. Loads extensions from `~/.pi/agent/settings.json` if configured (cached by commit SHA). Skills from `.agents/skills/` are **not** loaded by default — set `auto_discover_skills: 'true'` to include them.
+5. Pre-collects the diff, changed file contents, and branch status (behind base, conflict files) into the user prompt so the agent starts with full context.
+6. Runs the pi agent with `read`, `bash`, and `web_crawl` tools. Tools are used to **supplement** the pre-collected context — trace references, read sibling/test files, verify external docs — not to rebuild it.
+7. Extracts inline findings from the `ai-review-findings` JSON block in the agent's response and posts them as line comments via `pulls.createReview`. Falls back to an issue comment when no findings are present.
+8. Posts the response via the appropriate GitHub API (REST for PRs/issues, GraphQL for discussions).
 
 ## Requirements
 
