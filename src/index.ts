@@ -12,6 +12,7 @@ import {
   wrapDiscussionComment,
 } from './template.js';
 import { extractFindings, formatFindingComment } from './inline-findings.js';
+import { runAgent, loadDoraSkill, loadObiSkill, ProviderError } from './agent.js';
 import type { ReviewConfig, InlineCommentConfig, IssueConfig, DiscussionConfig } from './types.js';
 
 type Octokit = ReturnType<typeof github.getOctokit>;
@@ -27,12 +28,13 @@ function getBaseInputs() {
   const obsidianVaultName = process.env.INPUT_OBSIDIAN_VAULT_NAME || '';
   const obsidianPrompt = process.env.INPUT_OBSIDIAN_PROMPT || '';
   const autoDiscoverSkills = (process.env.INPUT_AUTO_DISCOVER_SKILLS || 'false').toLowerCase() === 'true';
+  const providerBaseUrl = core.getInput('provider_base_url') || 'https://api.berget.ai/v1';
 
   if (!apiKey && !core.getInput('pi_auth')) {
     throw new Error('Either api_key or pi_auth must be provided');
   }
 
-  return { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills };
+  return { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl };
 }
 
 function isOwnerOrMember({ association }: { association: string }): boolean {
@@ -119,7 +121,7 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = getBaseInputs();
   const octokit2 = github.getOctokit(token);
   const ctx = github.context;
 
@@ -143,6 +145,7 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
     obsidianVaultName,
     obsidianPrompt,
     autoDiscoverSkills,
+    providerBaseUrl,
   };
 
   const body = await runReview({ config: reviewConfig });
@@ -176,7 +179,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = getBaseInputs();
   const octokit2 = github.getOctokit(token);
   const ctx = github.context;
 
@@ -216,6 +219,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
       obsidianVaultName,
       obsidianPrompt,
       autoDiscoverSkills,
+      providerBaseUrl,
     };
 
     const body = await runReview({ config: reviewConfig });
@@ -264,7 +268,7 @@ async function handleInlineComment({ octokit }: { octokit: Octokit }): Promise<v
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = getBaseInputs();
   const octokit2 = github.getOctokit(token);
   const ctx = github.context;
 
@@ -299,6 +303,7 @@ async function handleInlineComment({ octokit }: { octokit: Octokit }): Promise<v
     obsidianVaultName,
     obsidianPrompt,
     autoDiscoverSkills,
+    providerBaseUrl,
   };
 
   core.info(`Trigger: comment | file: ${inlineConfig.filePath} | message: ${trigger.message || '(none)'}`);
@@ -355,7 +360,7 @@ async function handleIssue({ octokit }: { octokit: Octokit }): Promise<void> {
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = getBaseInputs();
   const octokit2 = github.getOctokit(token);
 
   // React on the comment or the issue itself
@@ -383,6 +388,7 @@ async function handleIssue({ octokit }: { octokit: Octokit }): Promise<void> {
     obsidianVaultName,
     obsidianPrompt,
     autoDiscoverSkills,
+    providerBaseUrl,
   };
 
   core.info(`Trigger: issue #${issueConfig.issueNumber} | message: ${trigger.message || '(none)'}`);
@@ -426,7 +432,7 @@ async function handleDiscussion({ octokit }: { octokit: Octokit }): Promise<void
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = getBaseInputs();
   const octokit2 = github.getOctokit(token);
 
   const discussion = payload.discussion;
@@ -447,6 +453,7 @@ async function handleDiscussion({ octokit }: { octokit: Octokit }): Promise<void
     obsidianVaultName,
     obsidianPrompt,
     autoDiscoverSkills,
+    providerBaseUrl,
   };
 
   core.info(`Trigger: discussion #${discussionConfig.discussionNumber} | message: ${trigger.message || '(none)'}`);
@@ -560,7 +567,75 @@ async function run(): Promise<void> {
     core.info(`Skipping: unhandled event ${eventName}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    core.setFailed(message);
+
+    if (error instanceof ProviderError) {
+      core.setFailed(message);
+      await postErrorComment(error).catch((e) =>
+        core.warning(`Could not post error comment: ${(e as Error).message}`),
+      );
+    } else {
+      core.setFailed(message);
+    }
+  }
+}
+
+async function postErrorComment(error: ProviderError): Promise<void> {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return;
+
+  const octokit = github.getOctokit(token);
+  const ctx = github.context;
+  const payload = github.context.payload;
+  const model = core.getInput('pi_model') || 'berget/zai-org/GLM-5.2';
+
+  const body = [
+    '## AI Review could not run',
+    '',
+    '```',
+    error.message,
+    '```',
+    '',
+    error.isBilling
+      ? '> [!WARNING]\n> The model provider returned a billing or rate-limit error. Top up your balance to resume AI reviews.'
+      : '> [!CAUTION]\n> The model provider returned an authentication or availability error. Check the API key and provider status.',
+    '',
+    `<sub>pi (${model})</sub>`,
+  ].join('\n');
+
+  // PR review or PR comment
+  const prNumber = payload.pull_request?.number ?? payload.issue?.number;
+  if (prNumber && !payload.discussion) {
+    await octokit.rest.issues.createComment({
+      ...ctx.repo,
+      issue_number: prNumber,
+      body,
+    });
+    core.info(`Posted error comment on #${prNumber}`);
+    return;
+  }
+
+  // Plain issue
+  if (payload.issue && !payload.issue.pull_request) {
+    await octokit.rest.issues.createComment({
+      ...ctx.repo,
+      issue_number: payload.issue.number,
+      body,
+    });
+    core.info(`Posted error comment on issue #${payload.issue.number}`);
+    return;
+  }
+
+  // Discussion (GraphQL required)
+  if (payload.discussion) {
+    await octokit.graphql(
+      `mutation AddDiscussionComment($discussionId: ID!, $body: String!) {
+        addDiscussionComment(input: { discussionId: $discussionId, body: $body }) {
+          comment { id }
+        }
+      }`,
+      { discussionId: payload.discussion.node_id, body },
+    );
+    core.info('Posted error comment on discussion');
   }
 }
 
