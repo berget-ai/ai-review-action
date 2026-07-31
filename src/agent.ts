@@ -16,6 +16,17 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import type { BaseConfig } from './types.js';
 
+export class ProviderError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode: number,
+    readonly isBilling: boolean,
+  ) {
+    super(message);
+    this.name = 'ProviderError';
+  }
+}
+
 type RunAgentParams = {
   config: BaseConfig;
   systemPrompt: string;
@@ -230,6 +241,13 @@ export async function runAgent({
   });
 
   core.startGroup('Running pi agent');
+
+  // Pre-flight: verify the provider is reachable and the API key has credits.
+  // This catches 401/402/503 before the agent loop starts, so we can post a
+  // helpful comment instead of silently producing an empty review.
+  const baseUrl = config.providerBaseUrl || 'https://api.berget.ai/v1';
+  await checkProviderHealth(baseUrl, config.apiKey, providerName, modelId);
+
   await session.prompt(userPrompt);
   core.endGroup();
 
@@ -237,4 +255,88 @@ export async function runAgent({
   session.dispose();
 
   return finalResponse;
+}
+
+async function checkProviderHealth(
+  baseUrl: string,
+  apiKey: string,
+  providerName: string,
+  modelId: string,
+): Promise<void> {
+  if (!apiKey) {
+    core.info('No API key — skipping provider health check');
+    return;
+  }
+
+  const url = baseUrl.replace(/\/$/, '') + '/chat/completions';
+  core.info(`Provider health check: POST ${url} (model: ${modelId})`);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: modelId,
+        messages: [{ role: 'user', content: 'ok' }],
+        max_tokens: 1,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err) {
+    throw new ProviderError(
+      `Could not reach the model provider at ${baseUrl}: ${(err as Error).message}`,
+      0,
+      false,
+    );
+  }
+
+  if (res.ok) {
+    core.info(`Provider health check: OK (${res.status})`);
+    return;
+  }
+
+  let body = '';
+  try {
+    body = await res.text();
+  } catch {
+    // ignore
+  }
+
+  let errorDetail = body;
+  try {
+    const parsed = JSON.parse(body);
+    errorDetail = parsed?.error?.message ?? parsed?.message ?? body;
+  } catch {
+    // not JSON, keep raw text
+  }
+
+  if (res.status === 402 || res.status === 429 || body.includes('INSUFFICIENT_WALLET_BALANCE')) {
+    const consoleUrl = baseUrl.replace(/\/v\d+\/?$/, '').replace('api.', 'console.');
+    throw new ProviderError(
+      `The model provider returned a billing error (HTTP ${res.status}): ${errorDetail}. ` +
+        `The Berget AI API key has run out of credits or been rate-limited. ` +
+        `Top up your balance at [console.berget.ai](${consoleUrl || 'https://console.berget.ai'}) to resume AI reviews.`,
+      res.status,
+      true,
+    );
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    throw new ProviderError(
+      `The model provider rejected the API key (HTTP ${res.status}): ${errorDetail}. ` +
+        `Check that the BERGET_API_KEY secret is set correctly and has not been revoked.`,
+      res.status,
+      false,
+    );
+  }
+
+  throw new ProviderError(
+    `The model provider returned an error (HTTP ${res.status}): ${errorDetail}`,
+    res.status,
+    false,
+  );
 }

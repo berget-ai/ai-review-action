@@ -326,6 +326,7 @@ runs:
         INPUT_EXTRA_PROMPT: ${{ inputs.extra_prompt }}
         INPUT_ACTION_PATH: ${{ github.action_path }}
         INPUT_AUTO_DISCOVER_SKILLS: ${{ inputs.auto_discover_skills }}
+        INPUT_PROVIDER_BASE_URL: ${{ inputs.provider_base_url }}
         INPUT_OBSIDIAN_VAULT_NAME: ${{ steps.vault-name.outputs.name }}
         INPUT_OBSIDIAN_PROMPT: ${{ inputs.obsidian_prompt }}
         OBI_VAULTS_PATH: ${{ steps.vault-name.outputs.home }}/obi-vaults
