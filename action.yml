@@ -313,6 +313,25 @@ runs:
         obi vaults
         obi map --vault "$VAULT_NAME"
 
+    - name: Fetch base branch for diff
+      if: github.event_name == 'pull_request' || (github.event_name == 'issue_comment' && github.event.issue.pull_request)
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        # Resolve the PR base branch from the API so we can fetch it as a local ref.
+        # actions/checkout only creates a local branch for the checked-out ref, not
+        # for the base branch, so git diff <base>...HEAD fails with "bad revision".
+        if [ -n "${{ github.event.pull_request.base.ref }}" ]; then
+          BASE="${{ github.event.pull_request.base.ref }}"
+        else
+          PR_NUMBER="${{ github.event.issue.number }}"
+          BASE=$(gh api /repos/${{ github.repository }}/pulls/$PR_NUMBER --jq '.base.ref')
+        fi
+        echo "Fetching base branch: $BASE"
+        git fetch origin "refs/heads/$BASE:refs/heads/$BASE" --depth=1
+
     - name: Run pi
       shell: bash
       env:
