@@ -83,6 +83,12 @@ inputs:
     description: 'Discover and load skills from .agents/skills/ and .pi/skills/ in the repo. Default false — only manually loaded skills (dora, obi) are used.'
     required: false
     default: 'false'
+  approve:
+    description: |
+      When true, the review event is set to APPROVE (no blockers) or REQUEST_CHANGES (at least one blocker).
+      When false (default), the review is always COMMENT — inline findings are posted but do not count toward required reviews.
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -345,6 +351,7 @@ runs:
         INPUT_EXTRA_PROMPT: ${{ inputs.extra_prompt }}
         INPUT_ACTION_PATH: ${{ github.action_path }}
         INPUT_AUTO_DISCOVER_SKILLS: ${{ inputs.auto_discover_skills }}
+        INPUT_APPROVE: ${{ inputs.approve }}
         INPUT_PROVIDER_BASE_URL: ${{ inputs.provider_base_url }}
         INPUT_OBSIDIAN_VAULT_NAME: ${{ steps.vault-name.outputs.name }}
         INPUT_OBSIDIAN_PROMPT: ${{ inputs.obsidian_prompt }}

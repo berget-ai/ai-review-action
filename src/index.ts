@@ -49,6 +49,10 @@ function isOwnerOrMember({ association }: { association: string }): boolean {
  * Post the review body as either:
  *   - a pull request review with inline line comments (when findings exist)
  *   - a plain issue comment (when no inline findings)
+ *
+ * When the `approve` input is true, the review event is set based on finding
+ * severity: APPROVE if no blockers, REQUEST_CHANGES if at least one blocker.
+ * When false (default), the review is always COMMENT.
  */
 async function postReview({
   octokit,
@@ -65,6 +69,7 @@ async function postReview({
 }): Promise<void> {
   const ctx = github.context;
   const { findings, bodyWithoutFindings } = extractFindings(body);
+  const approve = core.getInput('approve') === 'true';
 
   // Skip only when the agent produced nothing usable at all. If the agent
   // emitted inline findings without a prose summary, still post the findings
@@ -78,6 +83,8 @@ async function postReview({
   const summary = wrapReviewComment({ body: summaryBody, model, prNumber });
 
   if (findings.length === 0 || !headSha) {
+    // No inline findings — always post as issue comment (COMMENT event makes
+    // no sense without line comments).
     await octokit.rest.issues.createComment({
       ...ctx.repo,
       issue_number: prNumber,
@@ -94,16 +101,27 @@ async function postReview({
     body: formatFindingComment(f),
   }));
 
+  // Determine review event:
+  // - approve=false (default): always COMMENT
+  // - approve=true: REQUEST_CHANGES if any blocker, else APPROVE
+  let event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES' = 'COMMENT';
+  if (approve) {
+    const hasBlocker = findings.some((f) => f.severity === 'blocker');
+    event = hasBlocker ? 'REQUEST_CHANGES' : 'APPROVE';
+  }
+
+  core.info(`Review event: ${event} (approve=${approve})`);
+
   await octokit.rest.pulls.createReview({
     ...ctx.repo,
     pull_number: prNumber,
     commit_id: headSha,
     body: summary,
-    event: 'COMMENT',
+    event,
     comments,
   });
 
-  core.info(`Review posted with ${comments.length} inline comments`);
+  core.info(`Review posted with ${comments.length} inline comments (event=${event})`);
 }
 
 async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<void> {
