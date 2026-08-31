@@ -112,16 +112,44 @@ async function postReview({
 
   core.info(`Review event: ${event} (approve=${approve})`);
 
-  await octokit.rest.pulls.createReview({
-    ...ctx.repo,
-    pull_number: prNumber,
-    commit_id: headSha,
-    body: summary,
-    event,
-    comments,
-  });
-
-  core.info(`Review posted with ${comments.length} inline comments (event=${event})`);
+  // Try posting all findings as a single review first. If GitHub rejects
+  // (e.g. a line number is outside the diff context), fall back to posting
+  // each comment individually and skip the ones that fail.
+  try {
+    await octokit.rest.pulls.createReview({
+      ...ctx.repo,
+      pull_number: prNumber,
+      commit_id: headSha,
+      body: summary,
+      event,
+      comments,
+    });
+    core.info(`Review posted with ${comments.length} inline comments (event=${event})`);
+  } catch (err) {
+    core.warning(`createReview failed: ${(err as Error).message}. Trying individual comments...`);
+    let posted = 0;
+    for (const c of comments) {
+      try {
+        await octokit.rest.pulls.createReview({
+          ...ctx.repo,
+          pull_number: prNumber,
+          commit_id: headSha,
+          event: 'COMMENT',
+          comments: [c],
+        });
+        posted++;
+      } catch {
+        core.warning(`Skipped comment on ${c.path}:${c.line} — line not in diff`);
+      }
+    }
+    // Post the summary as an issue comment so the review body is not lost.
+    await octokit.rest.issues.createComment({
+      ...ctx.repo,
+      issue_number: prNumber,
+      body: summary,
+    });
+    core.info(`Review posted: ${posted}/${comments.length} inline comments + summary as issue comment`);
+  }
 }
 
 async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<void> {
