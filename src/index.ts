@@ -99,9 +99,20 @@ async function postReview({
   const summaryBody = bodyWithoutFindings.trim() || '_AI review produced inline findings only._';
   const summary = wrapReviewComment({ body: summaryBody, model, prNumber });
 
-  if (findings.length === 0 || !headSha) {
-    // No inline findings — always post as issue comment (COMMENT event makes
-    // no sense without line comments).
+  if (!headSha) {
+    // No head SHA — cannot post a review, fall back to issue comment.
+    await octokit.rest.issues.createComment({
+      ...ctx.repo,
+      issue_number: prNumber,
+      body: summary,
+    });
+    core.info('Review posted as issue comment (no head SHA)');
+    return;
+  }
+
+  if (findings.length === 0 && !approve) {
+    // No inline findings and approvals disabled — a plain issue comment is
+    // enough (a COMMENT review without line comments adds nothing).
     await octokit.rest.issues.createComment({
       ...ctx.repo,
       issue_number: prNumber,
@@ -139,7 +150,9 @@ async function postReview({
       commit_id: headSha,
       body: summary,
       event,
-      comments,
+      // Omit entirely when empty — approve-on-clean-PR posts a review
+      // without line comments.
+      ...(comments.length > 0 ? { comments } : {}),
     });
     core.info(`Review posted with ${comments.length} inline comments (event=${event})`);
   } catch (err) {
