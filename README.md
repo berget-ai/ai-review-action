@@ -125,7 +125,7 @@ Mention `@berget` anywhere on GitHub to trigger a response:
 | Where | Trigger | What happens |
 |---|---|---|
 | Pull request | _(automatic)_ | Structured code review posted on the PR |
-| PR comment | @berget review | Structured code review posted on the PR |
+| PR comment | `@berget review` | Structured code review posted on the PR |
 | PR file comment | `@berget <question>` | Reads the file in context, replies in the thread |
 | Issue | `@berget <question>` | Explores the codebase, replies in the issue |
 | Discussion | `@berget <question>` | Explores the codebase, replies in the discussion |
@@ -488,7 +488,7 @@ On a warm run (same commit, same deps), only the dora agent itself runs -- all i
 2. Validates the commenter is a repo owner, member, or collaborator.
 3. Routes based on the GitHub event:
    - `pull_request` → automatic review on every PR
-   - `issue_comment` on a PR → @berget review triggers a full review
+   - `issue_comment` on a PR → `@berget review` triggers a full review
    - `pull_request_review_comment` → reads the file, replies to the thread
    - `issues` / `issue_comment` on a plain issue → explores codebase, replies in the issue
    - `discussion` / `discussion_comment` → explores codebase, replies in the discussion

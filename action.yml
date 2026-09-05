@@ -24,7 +24,7 @@ inputs:
     required: false
     default: 'https://api.berget.ai/v1'
   provider_name:
-    description: 'Provider name to register in models.json (must match the prefix in pi_model).'
+    description: 'Provider name to register in models.json (must match the prefix in model).'
     required: false
     default: 'berget'
   use_dora:
