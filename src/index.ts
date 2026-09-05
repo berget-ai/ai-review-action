@@ -13,12 +13,29 @@ import {
 } from './template.js';
 import { extractFindings, formatFindingComment } from './inline-findings.js';
 import { runAgent, loadDoraSkill, loadObiSkill, ProviderError } from './agent.js';
+import { getInstallationToken } from './app-token.js';
 import type { ReviewConfig, InlineCommentConfig, IssueConfig, DiscussionConfig } from './types.js';
 
 type Octokit = ReturnType<typeof github.getOctokit>;
 
-function getBaseInputs() {
-  const token = process.env.GITHUB_TOKEN;
+async function getBaseInputs() {
+  // When GitHub App credentials are provided, mint an installation token and
+  // use it for all API calls. Unlike GITHUB_TOKEN (github-actions[bot]), an
+  // app token is allowed to APPROVE / REQUEST_CHANGES on PR reviews.
+  const appId = core.getInput('github_app_id') || '';
+  const appPrivateKey = core.getInput('github_app_private_key') || '';
+  let token = process.env.GITHUB_TOKEN;
+  if (appId && appPrivateKey) {
+    const { owner, repo } = github.context.repo;
+    token = await getInstallationToken({
+      appId,
+      privateKey: appPrivateKey,
+      installationId: core.getInput('github_app_installation_id') || undefined,
+      owner,
+      repo,
+    });
+    core.info('Using GitHub App installation token for API calls');
+  }
   if (!token) throw new Error('GITHUB_TOKEN is required');
 
   const model = core.getInput('pi_model') || 'opencode-go/kimi-k2.5';
@@ -167,7 +184,7 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = await getBaseInputs();
   const octokit2 = github.getOctokit(token);
   const ctx = github.context;
 
@@ -225,7 +242,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = await getBaseInputs();
   const octokit2 = github.getOctokit(token);
   const ctx = github.context;
 
@@ -314,7 +331,7 @@ async function handleInlineComment({ octokit }: { octokit: Octokit }): Promise<v
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = await getBaseInputs();
   const octokit2 = github.getOctokit(token);
   const ctx = github.context;
 
@@ -406,7 +423,7 @@ async function handleIssue({ octokit }: { octokit: Octokit }): Promise<void> {
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = await getBaseInputs();
   const octokit2 = github.getOctokit(token);
 
   // React on the comment or the issue itself
@@ -478,7 +495,7 @@ async function handleDiscussion({ octokit }: { octokit: Octokit }): Promise<void
     return;
   }
 
-  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = getBaseInputs();
+  const { token, model, apiKey, actionPath, workingDir, obsidianVaultName, obsidianPrompt, autoDiscoverSkills, providerBaseUrl } = await getBaseInputs();
   const octokit2 = github.getOctokit(token);
 
   const discussion = payload.discussion;

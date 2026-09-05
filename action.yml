@@ -87,8 +87,25 @@ inputs:
     description: |
       When true, the review event is set to APPROVE (no blockers) or REQUEST_CHANGES (at least one blocker).
       When false (default), the review is always COMMENT — inline findings are posted but do not count toward required reviews.
+      NOTE: Approving requires github_app_id + github_app_private_key — the default GITHUB_TOKEN
+      (github-actions[bot]) is not permitted to approve pull requests.
     required: false
     default: 'false'
+  github_app_id:
+    description: |
+      GitHub App ID (e.g. berget-ai-review-bot). When set together with github_app_private_key,
+      reviews/comments are posted as the GitHub App instead of github-actions[bot], enabling
+      APPROVE / REQUEST_CHANGES review events.
+    required: false
+    default: ''
+  github_app_private_key:
+    description: 'GitHub App private key (PEM). Store as an org secret.'
+    required: false
+    default: ''
+  github_app_installation_id:
+    description: 'GitHub App installation ID. Optional — resolved automatically via the repo installation endpoint when omitted.'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -352,6 +369,9 @@ runs:
         INPUT_ACTION_PATH: ${{ github.action_path }}
         INPUT_AUTO_DISCOVER_SKILLS: ${{ inputs.auto_discover_skills }}
         INPUT_APPROVE: ${{ inputs.approve }}
+        INPUT_GITHUB_APP_ID: ${{ inputs.github_app_id }}
+        INPUT_GITHUB_APP_PRIVATE_KEY: ${{ inputs.github_app_private_key }}
+        INPUT_GITHUB_APP_INSTALLATION_ID: ${{ inputs.github_app_installation_id }}
         INPUT_PROVIDER_BASE_URL: ${{ inputs.provider_base_url }}
         INPUT_OBSIDIAN_VAULT_NAME: ${{ steps.vault-name.outputs.name }}
         INPUT_OBSIDIAN_PROMPT: ${{ inputs.obsidian_prompt }}
