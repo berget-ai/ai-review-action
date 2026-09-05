@@ -594,6 +594,19 @@ async function run(): Promise<void> {
 
     core.info(`Event: ${eventName}`);
 
+    // Fork PRs do not receive repository secrets, so external contributors'
+    // PRs would otherwise fail the workflow with a red X. Skip gracefully
+    // instead — no credentials means nothing to bill the review to anyway.
+    const isForkPr = payload.pull_request?.head?.repo?.fork === true;
+    if (isForkPr && !core.getInput('api_key') && !core.getInput('pi_auth')) {
+      core.notice(
+        'Skipping: no api_key/pi_auth available in this context. ' +
+          'Fork pull requests do not receive repository secrets, so AI review is not possible. ' +
+          'A maintainer can re-trigger with `@pi review` from the base repo if desired.',
+      );
+      return;
+    }
+
     // pull_request event -> automatic review
     if (eventName === 'pull_request' && payload.pull_request) {
       await handlePullRequest({ octokit });
@@ -649,7 +662,7 @@ async function postErrorComment(error: ProviderError): Promise<void> {
   const octokit = github.getOctokit(token);
   const ctx = github.context;
   const payload = github.context.payload;
-  const model = core.getInput('pi_model') || 'berget/zai-org/GLM-5.2';
+  const model = core.getInput('pi_model') || 'berget/zai-org/GLM-5.3-Flash';
 
   const body = [
     '## AI Review could not run',

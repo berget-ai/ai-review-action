@@ -1,6 +1,110 @@
-# AI Review Action (Berget)
+# Sovereign AI Code Review — GitHub Action
 
-GitHub Action that runs AI-powered automation using [pi](https://github.com/badlogic/pi-mono) and [Berget AI](https://berget.ai), with optional [dora](https://github.com/butttons/dora) code intelligence.
+AI code review that keeps your code in Europe. Reviews run on [Berget AI](https://berget.ai)'s own GPU infrastructure in Sweden — no code or diffs are ever sent to US cloud providers.
+
+- **Inline findings** posted as line comments on the PR diff, with a structured summary
+- **Optional AI approval** — the bot can APPROVE or REQUEST_CHANGES like a human reviewer (with your own GitHub App, [see below](#optional-let-the-bot-approve-or-request-changes))
+- **Open weight models** (GLM, Kimi, Qwen, Gemma…) running on EU-sovereign infrastructure
+- **Free tier** — [create an API key](https://console.berget.ai) and try it on your first PR in ~5 minutes
+
+## Quick start (5 minutes)
+
+### 1. Get a free API key
+
+Sign up at [console.berget.ai](https://console.berget.ai) and create an API key. The free tier is enough to try code review on real PRs.
+
+### 2. Add it as a repository secret
+
+**Settings → Secrets and variables → Actions → New repository secret**:
+
+- **Name:** `BERGET_API_KEY`
+- **Value:** your API key
+
+### 3. Add the workflow
+
+```yaml
+# .github/workflows/ai-review.yml
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: AI Review
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@pi review'))
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: >-
+            ${{
+              github.event.pull_request.head.sha ||
+              (github.event.issue.pull_request && format('refs/pull/{0}/merge', github.event.issue.number)) ||
+              github.sha
+            }}
+      - uses: berget-ai/ai-review-action@v1
+        with:
+          api_key: ${{ secrets.BERGET_API_KEY }}
+          use_dora: 'false'
+```
+
+Open a PR — the review appears within a couple of minutes. Re-run any time by commenting `@pi review` on the PR.
+
+> **Fork pull requests:** GitHub does not expose repository secrets to fork PRs, so the action skips them gracefully. Reviews run as soon as the PR is opened from a branch in your repo.
+
+## Data & privacy
+
+- The PR diff and file contents needed for context are sent to `https://api.berget.ai/v1` over TLS and processed on Berget AI's own GPU servers in Sweden.
+- Nothing is used for model training, and no code is sent to third-party LLM providers.
+- Your API key is only consumed inside your own GitHub Actions runs — it is never shared.
+
+### Optional: Let the bot approve or request changes
+
+By default the bot posts findings as **comments** and never blocks a PR (GitHub does not allow `github-actions[bot]` to approve). To get real APPROVE / REQUEST_CHANGES reviews that count toward required approvals:
+
+1. **Create a GitHub App** in your org: *Settings → Developer settings → GitHub Apps → New GitHub App*
+   - Webhook: **uncheck Active**
+   - Repository permissions: **Contents: Read-only**, **Issues: Read & write**, **Pull requests: Read & write**
+   - *Only on this account*
+2. **Generate a private key** and install the app on your repos.
+3. Add two secrets: `AI_REVIEW_APP_ID` (shown on the app's page) and `AI_REVIEW_APP_PRIVATE_KEY` (the downloaded PEM).
+4. Pass them to the action:
+
+```yaml
+      - uses: berget-ai/ai-review-action@v1
+        with:
+          api_key: ${{ secrets.BERGET_API_KEY }}
+          use_dora: 'false'
+          approve: 'true'
+          github_app_id: ${{ secrets.AI_REVIEW_APP_ID }}
+          github_app_private_key: ${{ secrets.AI_REVIEW_APP_PRIVATE_KEY }}
+```
+
+With `approve: 'true'`, a review with no **blocker** findings is posted as APPROVE; a review containing at least one blocker is posted as REQUEST_CHANGES.
+
+---
+
+## All the ways to trigger it
 
 Mention `@pi` anywhere on GitHub to trigger a response:
 
@@ -14,22 +118,9 @@ Mention `@pi` anywhere on GitHub to trigger a response:
 
 Only repository owners, members, and collaborators can trigger the action.
 
-## Setup
+## More setup options
 
-### 1. Get a Berget API key
-
-1. Sign up or log in at [berget.ai](https://berget.ai)
-2. Navigate to **API Keys** in your dashboard
-3. Create a new API key and copy it
-
-### 2. Add the secret to your repository
-
-Go to **Settings > Secrets and variables > Actions** in your repository and add a new secret:
-
-- **Name:** `BERGET_API_KEY`
-- **Value:** your Berget API key
-
-### 3. Add the workflow
+### Chat-style workflow (issues, discussions, inline questions)
 
 ```yaml
 # .github/workflows/pi.yml
@@ -69,68 +160,14 @@ jobs:
               github.sha
             }}
 
-      - uses: berget-ai/ai-review-action@main
+      - uses: berget-ai/ai-review-action@v1
         with:
           api_key: ${{ secrets.BERGET_API_KEY }}
           # Optionally specify a different Berget model:
-          # pi_model: 'berget/zai-org/GLM-5.2'
+          # pi_model: 'berget/zai-org/GLM-5.3-Flash'
 ```
 
 The action uses the Berget API (`https://api.berget.ai/v1`) by default. No extra configuration is needed.
-
-#### Automatic review on every PR
-
-```yaml
-# .github/workflows/ai-review.yml
-name: AI Code Review
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  issue_comment:
-    types: [created]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pull-requests: write
-  issues: write
-
-concurrency:
-  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
-  cancel-in-progress: true
-
-jobs:
-  review:
-    name: AI Review
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request &&
-       contains(github.event.comment.body, '@pi review') &&
-       (github.event.comment.author_association == 'OWNER' ||
-        github.event.comment.author_association == 'MEMBER' ||
-        github.event.comment.author_association == 'COLLABORATOR'))
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: >-
-            ${{
-              github.event.pull_request.head.sha ||
-              (github.event.issue.pull_request && format('refs/pull/{0}/merge', github.event.issue.number)) ||
-              github.sha
-            }}
-
-      - uses: berget-ai/ai-review-action@main
-        with:
-          api_key: ${{ secrets.BERGET_API_KEY }}
-          use_dora: 'false'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
 
 #### Alternative: pi auth.json
 
@@ -200,7 +237,11 @@ Thinking about moving all rendering to the edge.
 |---|---|---|
 | `api_key` | -- | API key for the model provider (e.g. your `BERGET_API_KEY`). Preferred over `pi_auth`. |
 | `pi_auth` | -- | Base64-encoded pi `auth.json`. Fallback when `api_key` is not set. |
-| `pi_model` | `berget/zai-org/GLM-5.2` | Model in `provider/model-id` format. |
+| `pi_model` | `berget/zai-org/GLM-5.3-Flash` | Model in `provider/model-id` format. |
+| `approve` | `false` | When `true`, post APPROVE (no blockers) or REQUEST_CHANGES (any blocker) instead of COMMENT. Requires a GitHub App — see above. |
+| `github_app_id` | -- | GitHub App ID. With `github_app_private_key`, reviews are posted as the app instead of `github-actions[bot]`. |
+| `github_app_private_key` | -- | GitHub App private key (PEM). Store as a secret. |
+| `github_app_installation_id` | -- | GitHub App installation ID. Optional — auto-resolved from the repo. |
 | `provider_base_url` | `https://api.berget.ai/v1` | Base URL for the LLM provider API. Override to use a different endpoint. |
 | `provider_name` | `berget` | Provider name registered in `models.json`. Must match the prefix in `pi_model`. |
 | `use_dora` | `true` | Enable dora code intelligence. |
@@ -226,7 +267,7 @@ Either `api_key` or `pi_auth` must be provided. When both are set, `api_key` tak
 ### Monorepo with pnpm
 
 ```yaml
-- uses: berget-ai/ai-review-action@main
+- uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.BERGET_API_KEY }}
     project_lockfile: 'pnpm-lock.yaml'
@@ -236,7 +277,7 @@ Either `api_key` or `pi_auth` must be provided. When both are set, `api_key` tak
 ### Large codebase (increase Node heap for dora indexing)
 
 ```yaml
-- uses: berget-ai/ai-review-action@main
+- uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.BERGET_API_KEY }}
     dora_index_command: 'NODE_OPTIONS="--max-old-space-size=6144" dora index'
@@ -245,7 +286,7 @@ Either `api_key` or `pi_auth` must be provided. When both are set, `api_key` tak
 ### Rust project
 
 ```yaml
-- uses: berget-ai/ai-review-action@main
+- uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.BERGET_API_KEY }}
     scip_install: 'cargo install rust-analyzer'
@@ -254,7 +295,7 @@ Either `api_key` or `pi_auth` must be provided. When both are set, `api_key` tak
 ### Python project
 
 ```yaml
-- uses: berget-ai/ai-review-action@main
+- uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.BERGET_API_KEY }}
     scip_install: 'pip install scip-python'
@@ -266,7 +307,7 @@ Either `api_key` or `pi_auth` must be provided. When both are set, `api_key` tak
 Uses pre-collected diff context, `grep`, `find`, and direct file reading only. Faster setup, no indexing.
 
 ```yaml
-- uses: berget-ai/ai-review-action@main
+- uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.BERGET_API_KEY }}
     use_dora: 'false'
@@ -282,7 +323,7 @@ Connect an Obsidian vault from another repo to give the agent access to document
 
 **Usage:**
 ```yaml
-- uses: berget-ai/ai-review-action@main
+- uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.BERGET_API_KEY }}
     obsidian_vault_repo: 'myorg/documentation'
@@ -330,7 +371,7 @@ Extensions add custom tools to the agent. The action supports any pi-compatible 
     }
     EOF
 
-- uses: berget-ai/ai-review-action@main
+- uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.BERGET_API_KEY }}
     exa_api_key: ${{ secrets.EXA_API_KEY }}
@@ -353,16 +394,16 @@ Once configured, the agent can use extension tools:
 ### Different model
 
 ```yaml
-- uses: berget-ai/ai-review-action@main
+- uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.BERGET_API_KEY }}
-    pi_model: 'berget/zai-org/GLM-5.2'
+    pi_model: 'berget/zai-org/GLM-5.3-Flash'
 ```
 
 To use a completely different provider, you can also override the base URL and provider name:
 
 ```yaml
-- uses: berget-ai/ai-review-action@main
+- uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.ANTHROPIC_KEY }}
     provider_base_url: 'https://api.anthropic.com/v1'
@@ -383,7 +424,7 @@ The system prompt and output template for PR reviews are fully replaceable. Defa
 Point the inputs to your own files:
 
 ```yaml
-- uses: berget-ai/ai-review-action@main
+- uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.BERGET_API_KEY }}
     system_prompt: '.github/review-prompt.md'
@@ -420,24 +461,25 @@ On a warm run (same commit, same deps), only the dora agent itself runs -- all i
 
 ## How it works
 
-1. Validates the commenter is a repo owner, member, or collaborator.
-2. Routes based on the GitHub event:
+1. When `github_app_id` + `github_app_private_key` are provided, the action mints a GitHub App installation token (RS256 JWT, no external dependencies) and uses it for all GitHub API calls — this is what enables APPROVE / REQUEST_CHANGES. Otherwise `GITHUB_TOKEN` is used and reviews are posted as comments by `github-actions[bot]`.
+2. Validates the commenter is a repo owner, member, or collaborator.
+3. Routes based on the GitHub event:
    - `pull_request` → automatic review on every PR
    - `issue_comment` on a PR → `@pi review` triggers a full review
    - `pull_request_review_comment` → reads the file, replies to the thread
    - `issues` / `issue_comment` on a plain issue → explores codebase, replies in the issue
    - `discussion` / `discussion_comment` → explores codebase, replies in the discussion
-3. If dora is enabled: installs dora + SCIP indexer (cached), runs `dora init` + `dora index` (cached per commit).
-4. Loads extensions from `~/.pi/agent/settings.json` if configured (cached by commit SHA). Skills from `.agents/skills/` are **not** loaded by default — set `auto_discover_skills: 'true'` to include them.
-5. Pre-collects the diff, changed file contents, and branch status (behind base, conflict files) into the user prompt so the agent starts with full context.
-6. Runs the pi agent with `read`, `bash`, and `web_crawl` tools. Tools are used to **supplement** the pre-collected context — trace references, read sibling/test files, verify external docs — not to rebuild it.
-7. Extracts inline findings from the `ai-review-findings` JSON block in the agent's response and posts them as line comments via `pulls.createReview`. Falls back to an issue comment when no findings are present.
-8. Posts the response via the appropriate GitHub API (REST for PRs/issues, GraphQL for discussions).
+4. If dora is enabled: installs dora + SCIP indexer (cached), runs `dora init` + `dora index` (cached per commit).
+5. Loads extensions from `~/.pi/agent/settings.json` if configured (cached by commit SHA). Skills from `.agents/skills/` are **not** loaded by default — set `auto_discover_skills: 'true'` to include them.
+6. Pre-collects the diff, changed file contents, and branch status (behind base, conflict files) into the user prompt so the agent starts with full context.
+7. Runs the pi agent with `read`, `bash`, and `web_crawl` tools. Tools are used to **supplement** the pre-collected context — trace references, read sibling/test files, verify external docs — not to rebuild it.
+8. Extracts inline findings from the `ai-review-findings` JSON block in the agent's response and posts them as line comments via `pulls.createReview`. Falls back to an issue comment when no findings are present.
+9. Posts the response via the appropriate GitHub API (REST for PRs/issues, GraphQL for discussions).
 
 ## Requirements
 
-- GitHub Actions runner: `ubuntu-latest`
-- One of: a provider API key or a base64-encoded pi `auth.json`
+- GitHub Actions runner: `ubuntu-latest` (or any runner with network access to `api.berget.ai`)
+- A [Berget AI](https://console.berget.ai) API key (free tier available) — or a base64-encoded pi `auth.json`
 
 ## License
 

@@ -14,7 +14,7 @@ inputs:
   pi_model:
     description: 'Model to use (provider/model format)'
     required: false
-    default: 'berget/zai-org/GLM-5.2'
+    default: 'berget/zai-org/GLM-5.3-Flash'
   provider_base_url:
     description: 'Base URL for the LLM provider. Used with api_key to auto-generate models.json.'
     required: false
