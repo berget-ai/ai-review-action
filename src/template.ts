@@ -7,7 +7,7 @@ export function wrapReviewComment({
   model: string;
   prNumber: number;
 }): string {
-  return [body, '', '---', `<sub>pi (${model}) | PR #${prNumber}</sub>`].join('\n');
+  return [body, '', '---', `<sub>Berget AI (${model}) | PR #${prNumber}</sub>`].join('\n');
 }
 
 export function wrapInlineComment({
@@ -21,7 +21,7 @@ export function wrapInlineComment({
   prNumber: number;
   filePath: string;
 }): string {
-  return [body, '', '---', `<sub>pi (${model}) | PR #${prNumber} \`${filePath}\`</sub>`].join(
+  return [body, '', '---', `<sub>Berget AI (${model}) | PR #${prNumber} \`${filePath}\`</sub>`].join(
     '\n',
   );
 }
@@ -35,7 +35,7 @@ export function wrapIssueComment({
   model: string;
   issueNumber: number;
 }): string {
-  return [body, '', '---', `<sub>pi (${model}) | Issue #${issueNumber}</sub>`].join('\n');
+  return [body, '', '---', `<sub>Berget AI (${model}) | Issue #${issueNumber}</sub>`].join('\n');
 }
 
 export function wrapDiscussionComment({
@@ -47,7 +47,7 @@ export function wrapDiscussionComment({
   model: string;
   discussionNumber: number;
 }): string {
-  return [body, '', '---', `<sub>pi (${model}) | Discussion #${discussionNumber}</sub>`].join(
+  return [body, '', '---', `<sub>Berget AI (${model}) | Discussion #${discussionNumber}</sub>`].join(
     '\n',
   );
 }

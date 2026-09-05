@@ -11,10 +11,14 @@ inputs:
     description: 'Base64-encoded pi auth.json. Fallback if api_key is not set. OAuth tokens may expire.'
     required: false
     default: ''
-  pi_model:
-    description: 'Model to use (provider/model format)'
+  model:
+    description: 'Model to use (provider/model format). Empty falls back to berget/zai-org/GLM-5.3-Flash.'
     required: false
-    default: 'berget/zai-org/GLM-5.3-Flash'
+    default: ''
+  pi_model:
+    description: 'Deprecated alias for model — kept for backward compatibility.'
+    required: false
+    default: ''
   provider_base_url:
     description: 'Base URL for the LLM provider. Used with api_key to auto-generate models.json.'
     required: false
@@ -136,8 +140,8 @@ runs:
       run: |
         set -euo pipefail
         mkdir -p ~/.pi/agent
-        # Extract model ID from pi_model (strip provider/ prefix)
-        MODEL_ID="${{ inputs.pi_model }}"
+        # Extract model ID from model (falls back to legacy pi_model)
+        MODEL_ID="${{ inputs.model || inputs.pi_model || 'berget/zai-org/GLM-5.3-Flash' }}"
         MODEL_ID="${MODEL_ID#*/}"
         cat > ~/.pi/agent/models.json <<JSON
         {
@@ -361,6 +365,7 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
         INPUT_API_KEY: ${{ inputs.api_key }}
         INPUT_PI_AUTH: ${{ inputs.pi_auth }}
+        INPUT_MODEL: ${{ inputs.model }}
         INPUT_PI_MODEL: ${{ inputs.pi_model }}
         INPUT_USE_DORA: ${{ inputs.use_dora }}
         INPUT_SYSTEM_PROMPT: ${{ inputs.system_prompt }}

@@ -139,8 +139,8 @@ Only repository owners, members, and collaborators can trigger the action.
 For answering `@berget` mentions in issues, PR threads and discussions (not just PR reviews), add this second workflow file:
 
 ```yaml
-# .github/workflows/pi.yml
-name: Pi
+# .github/workflows/berget.yml
+name: Berget AI
 on:
   issue_comment:
     types: [created]
@@ -162,7 +162,9 @@ jobs:
       (contains(github.event.issue.body, '@berget') &&
        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
                 github.event.issue.author_association)) ||
-      contains(github.event.discussion.body, '@berget')
+      (contains(github.event.discussion.body, '@berget') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+                github.event.discussion.author_association))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -184,7 +186,7 @@ jobs:
         with:
           api_key: ${{ secrets.BERGET_API_KEY }}
           # Optionally specify a different Berget model:
-          # pi_model: 'berget/zai-org/GLM-5.3-Flash'
+          # model: 'berget/zai-org/GLM-5.3-Flash'
 ```
 
 The action uses the Berget API (`https://api.berget.ai/v1`) by default. No extra configuration is needed.
@@ -257,13 +259,14 @@ Thinking about moving all rendering to the edge.
 |---|---|---|
 | `api_key` | -- | API key for the model provider (e.g. your `BERGET_API_KEY`). Preferred over `pi_auth`. |
 | `pi_auth` | -- | Base64-encoded pi `auth.json`. Fallback when `api_key` is not set. |
-| `pi_model` | `berget/zai-org/GLM-5.3-Flash` | Model in `provider/model-id` format. |
+| `model` | `berget/zai-org/GLM-5.3-Flash` | Model in `provider/model-id` format. |
+| `pi_model` | -- | Deprecated alias for `model`. |
 | `approve` | `false` | When `true`, post APPROVE (no blockers) or REQUEST_CHANGES (any blocker) instead of COMMENT. Requires a GitHub App — see above. |
 | `github_app_id` | -- | GitHub App ID. With `github_app_private_key`, reviews are posted as the app instead of `github-actions[bot]`. |
 | `github_app_private_key` | -- | GitHub App private key (PEM). Store as a secret. |
 | `github_app_installation_id` | -- | GitHub App installation ID. Optional — auto-resolved from the repo. |
 | `provider_base_url` | `https://api.berget.ai/v1` | Base URL for the LLM provider API. Override to use a different endpoint. |
-| `provider_name` | `berget` | Provider name registered in `models.json`. Must match the prefix in `pi_model`. |
+| `provider_name` | `berget` | Provider name registered in `models.json`. Must match the prefix in `model`. |
 | `use_dora` | `true` | Enable dora code intelligence. |
 | `dora_version` | `latest` | Dora CLI version tag. |
 | `scip_install` | `bun install -g @sourcegraph/scip-typescript` | SCIP indexer install command. Set to empty string to skip. |
@@ -417,7 +420,7 @@ Once configured, the agent can use extension tools:
 - uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.BERGET_API_KEY }}
-    pi_model: 'berget/zai-org/GLM-5.3-Flash'
+    model: 'berget/zai-org/GLM-5.3-Flash'
 ```
 
 To use a completely different provider, you can also override the base URL and provider name:
@@ -428,7 +431,7 @@ To use a completely different provider, you can also override the base URL and p
     api_key: ${{ secrets.ANTHROPIC_KEY }}
     provider_base_url: 'https://api.anthropic.com/v1'
     provider_name: 'anthropic'
-    pi_model: 'anthropic/claude-sonnet-4'
+    model: 'anthropic/claude-sonnet-4'
 ```
 
 ## Customizing prompts

@@ -39,7 +39,7 @@ async function getBaseInputs() {
   }
   if (!token) throw new Error('GITHUB_TOKEN is required');
 
-  const model = core.getInput('pi_model') || 'opencode-go/kimi-k2.5';
+  const model = core.getInput('model') || core.getInput('pi_model') || 'berget/zai-org/GLM-5.3-Flash';
   const apiKey = core.getInput('api_key') || '';
   const actionPath = core.getInput('action_path') || '';
   const workingDir = process.env.GITHUB_WORKSPACE ?? process.cwd();
@@ -713,7 +713,7 @@ async function postErrorComment(error: ProviderError): Promise<void> {
   const octokit = github.getOctokit(token);
   const ctx = github.context;
   const payload = github.context.payload;
-  const model = core.getInput('pi_model') || 'berget/zai-org/GLM-5.3-Flash';
+  const model = core.getInput('model') || core.getInput('pi_model') || 'berget/zai-org/GLM-5.3-Flash';
 
   const body = [
     '## AI Review could not run',
@@ -726,7 +726,7 @@ async function postErrorComment(error: ProviderError): Promise<void> {
       ? '> [!WARNING]\n> The model provider returned a billing or rate-limit error. Top up your balance to resume AI reviews.'
       : '> [!CAUTION]\n> The model provider returned an authentication or availability error. Check the API key and provider status.',
     '',
-    `<sub>pi (${model})</sub>`,
+    `<sub>Berget AI (${model})</sub>`,
   ].join('\n');
 
   // PR review or PR comment

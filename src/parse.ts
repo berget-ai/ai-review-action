@@ -5,8 +5,8 @@ import type { ParsedTrigger } from './types.js';
 const REVIEW_PATTERN = /^@(?:berget|pi)\s+review(?:\s+(.*))?$/is;
 
 // Matches "@berget" (or legacy "@pi") followed by an optional message anywhere
-// in the body
-const MENTION_PATTERN = /@(?:berget|pi)(?:\s+(.*))?$/is;
+// in the body. Negative lookahead excludes @berget.ai / @berget-ai-daily etc.
+const MENTION_PATTERN = /@(?:berget|pi)(?![\w.\-])(?:\s+(.*))?$/is;
 
 export function parseReviewTrigger({ body }: { body: string }): ParsedTrigger | null {
   const trimmed = body.trim();
@@ -34,5 +34,5 @@ export function parseMentionTrigger({
 }
 
 export function containsPiMention({ body }: { body: string }): boolean {
-  return /@(?:berget|pi)\b/i.test(body);
+  return /@(?:berget|pi)(?![\w.\-])/i.test(body);
 }
