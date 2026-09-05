@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test';
 import { parseReviewTrigger, parseMentionTrigger, containsPiMention } from './parse.js';
 
-test('parseReviewTrigger: @berget review', () => {
+test('parseReviewTrigger: bare @berget triggers review', () => {
+  expect(parseReviewTrigger({ body: '@berget' })).toEqual({ command: 'review', message: '' });
+});
+
+test('parseReviewTrigger: @berget review is equivalent sugar', () => {
   expect(parseReviewTrigger({ body: '@berget review' })).toEqual({ command: 'review', message: '' });
 });
 
@@ -13,12 +17,12 @@ test('parseReviewTrigger: message captured', () => {
 });
 
 test('parseReviewTrigger: legacy @pi alias still works', () => {
+  expect(parseReviewTrigger({ body: '@pi' })).toEqual({ command: 'review', message: '' });
   expect(parseReviewTrigger({ body: '@pi review' })).toEqual({ command: 'review', message: '' });
 });
 
-test('parseReviewTrigger: bare mention without "review" is not a trigger', () => {
-  expect(parseReviewTrigger({ body: '@berget' })).toBeNull();
-  expect(parseReviewTrigger({ body: '@berget hello there' })).toBeNull();
+test('parseReviewTrigger: questions are chat mentions, not reviews', () => {
+  expect(parseReviewTrigger({ body: '@berget what does this function do?' })).toBeNull();
 });
 
 test('parseReviewTrigger: must start the comment body', () => {

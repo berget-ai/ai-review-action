@@ -216,7 +216,7 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
     await octokit2.rest.issues.createComment({
       ...ctx.repo,
       issue_number: pr.number,
-      body: `No new commits since the previous AI review at \`${pr.head.sha.slice(0, 7)}\` — nothing new to review. Comment \`@berget review <what to look at>\` to force a full re-review.\n${reviewShaMarker(pr.head.sha)}`,
+      body: `No new commits since the previous AI review at \`${pr.head.sha.slice(0, 7)}\` — nothing new to review. Comment \`@berget <what to look at>\` to force a full re-review.\n${reviewShaMarker(pr.head.sha)}`,
     });
     return;
   }
@@ -278,7 +278,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
   const octokit2 = github.getOctokit(token);
   const ctx = github.context;
 
-  // Try @berget review first
+  // Try review trigger first
   const reviewTrigger = parseReviewTrigger({ body: comment.body });
   if (reviewTrigger) {
     core.info(`Trigger: review | message: ${reviewTrigger.message || '(none)'}`);
@@ -296,8 +296,8 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
       pull_number: issueNumber,
     });
 
-    // Bare "@berget review" → follow-up review when we have a previous review on
-    // record. An explicit message ("@berget review focus on X") forces a full
+    // Bare "@berget" → follow-up review when we have a previous review on
+    // record. An explicit message ("@berget focus on X") forces a full
     // review with that focus instead.
     let previousReview = null;
     if (!reviewTrigger.message.trim()) {
@@ -308,7 +308,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
         await octokit2.rest.issues.createComment({
           ...ctx.repo,
           issue_number: issueNumber,
-          body: `No new commits since the previous AI review at \`${pr.head.sha.slice(0, 7)}\` — nothing new to review. Comment \`@berget review <what to look at>\` to force a full re-review.\n${reviewShaMarker(pr.head.sha)}`,
+          body: `No new commits since the previous AI review at \`${pr.head.sha.slice(0, 7)}\` — nothing new to review. Comment \`@berget <what to look at>\` to force a full re-review.\n${reviewShaMarker(pr.head.sha)}`,
         });
         return;
       }
@@ -350,7 +350,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
     return;
   }
 
-  core.info('Skipping: PR comment does not match @berget review pattern');
+  core.info('Skipping: PR comment is not a review trigger');
 }
 
 // ---------------------------------------------------------------------------
@@ -653,7 +653,7 @@ async function run(): Promise<void> {
       core.notice(
         'Skipping: no api_key/pi_auth available in this context. ' +
           'Fork pull requests do not receive repository secrets, so AI review is not possible. ' +
-          'A maintainer can re-trigger with `@berget review` from the base repo if desired.',
+          'A maintainer can re-trigger with `@berget` from the base repo if desired.',
       );
       return;
     }
