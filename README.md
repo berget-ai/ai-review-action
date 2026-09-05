@@ -51,7 +51,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
-       contains(github.event.comment.body, '@berget review') &&
+       contains(github.event.comment.body, '@berget') &&
        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
                 github.event.comment.author_association))
     steps:
@@ -70,7 +70,7 @@ jobs:
           use_dora: 'false'
 ```
 
-Open a PR — the review appears within a couple of minutes. Re-run any time by commenting `@berget review` on the PR.
+Open a PR — the review appears within a couple of minutes. Re-run any time by commenting `@berget` on the PR.
 
 ### Follow-up reviews are incremental
 
@@ -80,7 +80,7 @@ The first review on a PR is a full review. Every posted review carries a hidden 
 - verifies whether each previous finding is fixed, still present, or partially fixed,
 - flags only new problems — instead of re-posting the whole summary.
 
-Comment `@berget review <what to look at>` to force a full re-review with a specific focus. If the branch was rebased (previous head no longer in history), the action falls back to a full review automatically.
+Comment `@berget <what to look at>` to force a full re-review with a specific focus. If the branch was rebased (previous head no longer in history), the action falls back to a full review automatically.
 
 > **Fork pull requests:** GitHub does not expose repository secrets to fork PRs, so the action skips them gracefully. Reviews run as soon as the PR is opened from a branch in your repo.
 
@@ -125,7 +125,7 @@ Mention `@berget` anywhere on GitHub to trigger a response:
 | Where | Trigger | What happens |
 |---|---|---|
 | Pull request | _(automatic)_ | Structured code review posted on the PR |
-| PR comment | `@berget review` | Structured code review posted on the PR |
+| PR comment | `@berget` | Structured code review posted on the PR |
 | PR file comment | `@berget <question>` | Reads the file in context, replies in the thread |
 | Issue | `@berget <question>` | Explores the codebase, replies in the issue |
 | Discussion | `@berget <question>` | Explores the codebase, replies in the discussion |
@@ -208,13 +208,13 @@ Add as `PI_AUTH` secret and use `pi_auth: ${{ secrets.PI_AUTH }}` in the workflo
 Comment on any PR:
 
 ```
-@berget review
+@berget
 ```
 
 With additional context:
 
 ```
-@berget review focus on error handling and edge cases
+@berget focus on error handling and edge cases
 ```
 
 ### Inline file comment
@@ -488,7 +488,7 @@ On a warm run (same commit, same deps), only the dora agent itself runs -- all i
 2. Validates the commenter is a repo owner, member, or collaborator.
 3. Routes based on the GitHub event:
    - `pull_request` → automatic review on every PR
-   - `issue_comment` on a PR → `@berget review` triggers a full review
+   - `issue_comment` on a PR → `@berget` triggers a review
    - `pull_request_review_comment` → reads the file, replies to the thread
    - `issues` / `issue_comment` on a plain issue → explores codebase, replies in the issue
    - `discussion` / `discussion_comment` → explores codebase, replies in the discussion
