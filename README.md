@@ -102,6 +102,8 @@ By default the bot posts findings as **comments** and never blocks a PR (GitHub 
 
 With `approve: 'true'`, a review with no **blocker** findings is posted as APPROVE; a review containing at least one blocker is posted as REQUEST_CHANGES.
 
+> **Note on required approvals:** GitHub may not count approvals from a GitHub App toward a *required approving review count* in branch rulesets (apps are not repository collaborators). The APPROVE review is still posted and visible as a green approval — whether it satisfies merge gating depends on your ruleset configuration.
+
 ---
 
 ## All the ways to trigger it
