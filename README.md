@@ -51,7 +51,9 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
-       contains(github.event.comment.body, '@pi review'))
+       contains(github.event.comment.body, '@berget review') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+                github.event.comment.author_association))
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,7 +70,7 @@ jobs:
           use_dora: 'false'
 ```
 
-Open a PR — the review appears within a couple of minutes. Re-run any time by commenting `@pi review` on the PR.
+Open a PR — the review appears within a couple of minutes. Re-run any time by commenting `@berget review` on the PR.
 
 ### Follow-up reviews are incremental
 
@@ -78,7 +80,7 @@ The first review on a PR is a full review. Every posted review carries a hidden 
 - verifies whether each previous finding is fixed, still present, or partially fixed,
 - flags only new problems — instead of re-posting the whole summary.
 
-Comment `@pi review <what to look at>` to force a full re-review with a specific focus. If the branch was rebased (previous head no longer in history), the action falls back to a full review automatically.
+Comment `@berget review <what to look at>` to force a full re-review with a specific focus. If the branch was rebased (previous head no longer in history), the action falls back to a full review automatically.
 
 > **Fork pull requests:** GitHub does not expose repository secrets to fork PRs, so the action skips them gracefully. Reviews run as soon as the PR is opened from a branch in your repo.
 
@@ -118,15 +120,15 @@ With `approve: 'true'`, a review with no **blocker** findings is posted as APPRO
 
 ## All the ways to trigger it
 
-Mention `@pi` anywhere on GitHub to trigger a response:
+Mention `@berget` anywhere on GitHub to trigger a response:
 
 | Where | Trigger | What happens |
 |---|---|---|
 | Pull request | _(automatic)_ | Structured code review posted on the PR |
-| PR comment | `@pi review` | Structured code review posted on the PR |
-| PR file comment | `@pi <question>` | Reads the file in context, replies in the thread |
-| Issue | `@pi <question>` | Explores the codebase, replies in the issue |
-| Discussion | `@pi <question>` | Explores the codebase, replies in the discussion |
+| PR comment | `@berget review` | Structured code review posted on the PR |
+| PR file comment | `@berget <question>` | Reads the file in context, replies in the thread |
+| Issue | `@berget <question>` | Explores the codebase, replies in the issue |
+| Discussion | `@berget <question>` | Explores the codebase, replies in the discussion |
 
 Only repository owners, members, and collaborators can trigger the action.
 
@@ -134,11 +136,11 @@ Only repository owners, members, and collaborators can trigger the action.
 
 ### Chat-style workflow (issues, discussions, inline questions)
 
-For answering `@pi` mentions in issues, PR threads and discussions (not just PR reviews), add this second workflow file:
+For answering `@berget` mentions in issues, PR threads and discussions (not just PR reviews), add this second workflow file:
 
 ```yaml
-# .github/workflows/pi.yml
-name: Pi
+# .github/workflows/berget.yml
+name: Berget AI
 on:
   issue_comment:
     types: [created]
@@ -152,11 +154,17 @@ on:
     types: [created]
 
 jobs:
-  pi:
+  berget:
     if: |
-      contains(github.event.comment.body, '@pi') ||
-      contains(github.event.issue.body, '@pi') ||
-      contains(github.event.discussion.body, '@pi')
+      (contains(github.event.comment.body, '@berget') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+                github.event.comment.author_association)) ||
+      (contains(github.event.issue.body, '@berget') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+                github.event.issue.author_association)) ||
+      (contains(github.event.discussion.body, '@berget') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+                github.event.discussion.author_association))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -178,7 +186,7 @@ jobs:
         with:
           api_key: ${{ secrets.BERGET_API_KEY }}
           # Optionally specify a different Berget model:
-          # pi_model: 'berget/zai-org/GLM-5.3-Flash'
+          # model: 'berget/zai-org/GLM-5.3-Flash'
 ```
 
 The action uses the Berget API (`https://api.berget.ai/v1`) by default. No extra configuration is needed.
@@ -200,13 +208,13 @@ Add as `PI_AUTH` secret and use `pi_auth: ${{ secrets.PI_AUTH }}` in the workflo
 Comment on any PR:
 
 ```
-@pi review
+@berget review
 ```
 
 With additional context:
 
 ```
-@pi review focus on error handling and edge cases
+@berget review focus on error handling and edge cases
 ```
 
 ### Inline file comment
@@ -214,35 +222,35 @@ With additional context:
 On the Files Changed tab of a PR, leave a comment on any line:
 
 ```
-@pi is this safe to call concurrently?
+@berget is this safe to call concurrently?
 ```
 
 ```
-@pi what happens if this returns null?
+@berget what happens if this returns null?
 ```
 
 The agent reads the full file for context before responding.
 
 ### Issue
 
-Mention `@pi` anywhere in an issue body when opening it, or in a follow-up comment:
+Mention `@berget` anywhere in an issue body when opening it, or in a follow-up comment:
 
 ```
 We need to migrate the storage layer to D1.
 
-@pi can you map out what currently exists and what would need to change?
+@berget can you map out what currently exists and what would need to change?
 ```
 
 The agent explores the codebase and posts a grounded reply.
 
 ### Discussion
 
-Mention `@pi` in a discussion body or reply:
+Mention `@berget` in a discussion body or reply:
 
 ```
 Thinking about moving all rendering to the edge.
 
-@pi what parts of the codebase would be hardest to migrate and why?
+@berget what parts of the codebase would be hardest to migrate and why?
 ```
 
 ## Inputs
@@ -251,13 +259,14 @@ Thinking about moving all rendering to the edge.
 |---|---|---|
 | `api_key` | -- | API key for the model provider (e.g. your `BERGET_API_KEY`). Preferred over `pi_auth`. |
 | `pi_auth` | -- | Base64-encoded pi `auth.json`. Fallback when `api_key` is not set. |
-| `pi_model` | `berget/zai-org/GLM-5.3-Flash` | Model in `provider/model-id` format. |
+| `model` | `berget/zai-org/GLM-5.3-Flash` | Model in `provider/model-id` format. |
+| `pi_model` | -- | Deprecated alias for `model`. |
 | `approve` | `false` | When `true`, post APPROVE (no blockers) or REQUEST_CHANGES (any blocker) instead of COMMENT. Requires a GitHub App — see above. |
 | `github_app_id` | -- | GitHub App ID. With `github_app_private_key`, reviews are posted as the app instead of `github-actions[bot]`. |
 | `github_app_private_key` | -- | GitHub App private key (PEM). Store as a secret. |
 | `github_app_installation_id` | -- | GitHub App installation ID. Optional — auto-resolved from the repo. |
 | `provider_base_url` | `https://api.berget.ai/v1` | Base URL for the LLM provider API. Override to use a different endpoint. |
-| `provider_name` | `berget` | Provider name registered in `models.json`. Must match the prefix in `pi_model`. |
+| `provider_name` | `berget` | Provider name registered in `models.json`. Must match the prefix in `model`. |
 | `use_dora` | `true` | Enable dora code intelligence. |
 | `dora_version` | `latest` | Dora CLI version tag. |
 | `scip_install` | `bun install -g @sourcegraph/scip-typescript` | SCIP indexer install command. Set to empty string to skip. |
@@ -396,11 +405,11 @@ Extensions add custom tools to the agent. The action supports any pi-compatible 
 Once configured, the agent can use extension tools:
 
 ```
-@pi search for the latest React best practices and compare them to our codebase
+@berget search for the latest React best practices and compare them to our codebase
 ```
 
 ```
-@pi use exa_search to find documentation for the error handling pattern we're using
+@berget use exa_search to find documentation for the error handling pattern we're using
 ```
 
 **Caching:** Extensions are cached by commit SHA for fast warm runs.
@@ -411,7 +420,7 @@ Once configured, the agent can use extension tools:
 - uses: berget-ai/ai-review-action@v1
   with:
     api_key: ${{ secrets.BERGET_API_KEY }}
-    pi_model: 'berget/zai-org/GLM-5.3-Flash'
+    model: 'berget/zai-org/GLM-5.3-Flash'
 ```
 
 To use a completely different provider, you can also override the base URL and provider name:
@@ -422,7 +431,7 @@ To use a completely different provider, you can also override the base URL and p
     api_key: ${{ secrets.ANTHROPIC_KEY }}
     provider_base_url: 'https://api.anthropic.com/v1'
     provider_name: 'anthropic'
-    pi_model: 'anthropic/claude-sonnet-4'
+    model: 'anthropic/claude-sonnet-4'
 ```
 
 ## Customizing prompts
@@ -479,7 +488,7 @@ On a warm run (same commit, same deps), only the dora agent itself runs -- all i
 2. Validates the commenter is a repo owner, member, or collaborator.
 3. Routes based on the GitHub event:
    - `pull_request` → automatic review on every PR
-   - `issue_comment` on a PR → `@pi review` triggers a full review
+   - `issue_comment` on a PR → `@berget review` triggers a full review
    - `pull_request_review_comment` → reads the file, replies to the thread
    - `issues` / `issue_comment` on a plain issue → explores codebase, replies in the issue
    - `discussion` / `discussion_comment` → explores codebase, replies in the discussion

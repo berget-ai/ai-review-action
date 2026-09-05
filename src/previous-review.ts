@@ -7,7 +7,7 @@ import * as core from '@actions/core';
  * Every review the action posts carries a hidden marker with the head SHA it
  * reviewed:  <!-- ai-review-sha: <sha> -->
  *
- * On subsequent runs (new pushes to the PR, or a bare `@pi review` comment)
+ * On subsequent runs (new pushes to the PR, or a bare `@berget review` comment)
  * we look up the most recent marker so the review can be *incremental* —
  * diff only what changed since, verify previous findings, and stay terse
  * instead of re-posting the full summary.

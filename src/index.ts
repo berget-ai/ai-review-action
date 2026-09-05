@@ -39,7 +39,7 @@ async function getBaseInputs() {
   }
   if (!token) throw new Error('GITHUB_TOKEN is required');
 
-  const model = core.getInput('pi_model') || 'opencode-go/kimi-k2.5';
+  const model = core.getInput('model') || core.getInput('pi_model') || 'berget/zai-org/GLM-5.3-Flash';
   const apiKey = core.getInput('api_key') || '';
   const actionPath = core.getInput('action_path') || '';
   const workingDir = process.env.GITHUB_WORKSPACE ?? process.cwd();
@@ -216,7 +216,7 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
     await octokit2.rest.issues.createComment({
       ...ctx.repo,
       issue_number: pr.number,
-      body: `No new commits since the previous AI review at \`${pr.head.sha.slice(0, 7)}\` — nothing new to review. Comment \`@pi review <what to look at>\` to force a full re-review.\n${reviewShaMarker(pr.head.sha)}`,
+      body: `No new commits since the previous AI review at \`${pr.head.sha.slice(0, 7)}\` — nothing new to review. Comment \`@berget review <what to look at>\` to force a full re-review.\n${reviewShaMarker(pr.head.sha)}`,
     });
     return;
   }
@@ -278,7 +278,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
   const octokit2 = github.getOctokit(token);
   const ctx = github.context;
 
-  // Try @pi review first
+  // Try @berget review first
   const reviewTrigger = parseReviewTrigger({ body: comment.body });
   if (reviewTrigger) {
     core.info(`Trigger: review | message: ${reviewTrigger.message || '(none)'}`);
@@ -296,8 +296,8 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
       pull_number: issueNumber,
     });
 
-    // Bare "@pi review" → follow-up review when we have a previous review on
-    // record. An explicit message ("@pi review focus on X") forces a full
+    // Bare "@berget review" → follow-up review when we have a previous review on
+    // record. An explicit message ("@berget review focus on X") forces a full
     // review with that focus instead.
     let previousReview = null;
     if (!reviewTrigger.message.trim()) {
@@ -308,7 +308,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
         await octokit2.rest.issues.createComment({
           ...ctx.repo,
           issue_number: issueNumber,
-          body: `No new commits since the previous AI review at \`${pr.head.sha.slice(0, 7)}\` — nothing new to review. Comment \`@pi review <what to look at>\` to force a full re-review.\n${reviewShaMarker(pr.head.sha)}`,
+          body: `No new commits since the previous AI review at \`${pr.head.sha.slice(0, 7)}\` — nothing new to review. Comment \`@berget review <what to look at>\` to force a full re-review.\n${reviewShaMarker(pr.head.sha)}`,
         });
         return;
       }
@@ -350,7 +350,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
     return;
   }
 
-  core.info('Skipping: PR comment does not match @pi review pattern');
+  core.info('Skipping: PR comment does not match @berget review pattern');
 }
 
 // ---------------------------------------------------------------------------
@@ -367,7 +367,7 @@ async function handleInlineComment({ octokit }: { octokit: Octokit }): Promise<v
   }
 
   if (!containsPiMention({ body: comment.body })) {
-    core.info('Skipping: no @pi mention');
+    core.info('Skipping: no @berget mention');
     return;
   }
 
@@ -455,7 +455,7 @@ async function handleIssue({ octokit }: { octokit: Octokit }): Promise<void> {
     : (payload.issue?.body ?? '');
 
   if (!containsPiMention({ body: triggerBody })) {
-    core.info('Skipping: no @pi mention');
+    core.info('Skipping: no @berget mention');
     return;
   }
 
@@ -533,7 +533,7 @@ async function handleDiscussion({ octokit }: { octokit: Octokit }): Promise<void
     : (payload.discussion?.body ?? '');
 
   if (!containsPiMention({ body: triggerBody })) {
-    core.info('Skipping: no @pi mention');
+    core.info('Skipping: no @berget mention');
     return;
   }
 
@@ -653,7 +653,7 @@ async function run(): Promise<void> {
       core.notice(
         'Skipping: no api_key/pi_auth available in this context. ' +
           'Fork pull requests do not receive repository secrets, so AI review is not possible. ' +
-          'A maintainer can re-trigger with `@pi review` from the base repo if desired.',
+          'A maintainer can re-trigger with `@berget review` from the base repo if desired.',
       );
       return;
     }
@@ -676,7 +676,7 @@ async function run(): Promise<void> {
       return;
     }
 
-    // Issue opened/edited body contains @pi, OR a comment on a plain issue
+    // Issue opened/edited body contains @berget, OR a comment on a plain issue
     if (
       (eventName === 'issues' && !payload.issue?.pull_request) ||
       (eventName === 'issue_comment' && !payload.issue?.pull_request)
@@ -713,7 +713,7 @@ async function postErrorComment(error: ProviderError): Promise<void> {
   const octokit = github.getOctokit(token);
   const ctx = github.context;
   const payload = github.context.payload;
-  const model = core.getInput('pi_model') || 'berget/zai-org/GLM-5.3-Flash';
+  const model = core.getInput('model') || core.getInput('pi_model') || 'berget/zai-org/GLM-5.3-Flash';
 
   const body = [
     '## AI Review could not run',
@@ -726,7 +726,7 @@ async function postErrorComment(error: ProviderError): Promise<void> {
       ? '> [!WARNING]\n> The model provider returned a billing or rate-limit error. Top up your balance to resume AI reviews.'
       : '> [!CAUTION]\n> The model provider returned an authentication or availability error. Check the API key and provider status.',
     '',
-    `<sub>pi (${model})</sub>`,
+    `<sub>Berget AI (${model})</sub>`,
   ].join('\n');
 
   // PR review or PR comment
