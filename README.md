@@ -70,6 +70,16 @@ jobs:
 
 Open a PR — the review appears within a couple of minutes. Re-run any time by commenting `@pi review` on the PR.
 
+### Follow-up reviews are incremental
+
+The first review on a PR is a full review. Every posted review carries a hidden marker with the head SHA it covered, so when new commits are pushed the next review is a **follow-up** that:
+
+- diffs only what changed since the previous review,
+- verifies whether each previous finding is fixed, still present, or partially fixed,
+- flags only new problems — instead of re-posting the whole summary.
+
+Comment `@pi review <what to look at>` to force a full re-review with a specific focus. If the branch was rebased (previous head no longer in history), the action falls back to a full review automatically.
+
 > **Fork pull requests:** GitHub does not expose repository secrets to fork PRs, so the action skips them gracefully. Reviews run as soon as the PR is opened from a branch in your repo.
 
 ## Data & privacy
@@ -123,6 +133,8 @@ Only repository owners, members, and collaborators can trigger the action.
 ## More setup options
 
 ### Chat-style workflow (issues, discussions, inline questions)
+
+For answering `@pi` mentions in issues, PR threads and discussions (not just PR reviews), add this second workflow file:
 
 ```yaml
 # .github/workflows/pi.yml

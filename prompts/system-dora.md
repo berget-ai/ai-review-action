@@ -110,3 +110,13 @@ Example:
   {"file":"src/db.ts","line":118,"severity":"warning","message":"N+1 query — batch fetch users by id."}
 ]
 ```
+
+## Follow-up reviews
+
+When the user prompt says this is a FOLLOW-UP review (you already reviewed this PR at an earlier commit), the rules change:
+
+- Review ONLY the incremental diff since your previous review.
+- For each previous finding, state whether it is fixed, still present, or partially fixed — one short line per finding.
+- Report only NEW problems in the new diff. Do not repeat still-unfixed findings as new findings (note them in the verdict list instead).
+- Do NOT write the full Summary / Risk / Architecture sections again — use the compact follow-up format specified in the user prompt.
+- The ```ai-review-findings JSON block MUST contain only NEW line findings from the incremental diff (verdicts on old findings can be inline comments only if they refer to a changed line).

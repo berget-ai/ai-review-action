@@ -28,6 +28,12 @@ export type ReviewConfig = BaseConfig & {
   useDora: boolean;
   systemPromptPath: string;
   reviewTemplatePath: string;
+  /**
+   * When set, this is a follow-up review: diff and context focus on changes
+   * since `sha` (the head the previous review covered) and the model is asked
+   * to verify previous findings instead of writing a full summary again.
+   */
+  previousReview?: { sha: string; body: string } | null;
 };
 
 export type InlineCommentConfig = BaseConfig & {

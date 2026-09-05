@@ -14,6 +14,7 @@ import {
 import { extractFindings, formatFindingComment } from './inline-findings.js';
 import { runAgent, loadDoraSkill, loadObiSkill, ProviderError } from './agent.js';
 import { getInstallationToken } from './app-token.js';
+import { findPreviousReview, reviewShaMarker } from './previous-review.js';
 import type { ReviewConfig, InlineCommentConfig, IssueConfig, DiscussionConfig } from './types.js';
 
 type Octokit = ReturnType<typeof github.getOctokit>;
@@ -97,7 +98,11 @@ async function postReview({
   }
 
   const summaryBody = bodyWithoutFindings.trim() || '_AI review produced inline findings only._';
-  const summary = wrapReviewComment({ body: summaryBody, model, prNumber });
+  // Hidden marker lets the next run detect the last reviewed head SHA and do
+  // an incremental follow-up review instead of repeating the full summary.
+  const summary =
+    wrapReviewComment({ body: summaryBody, model, prNumber }) +
+    (headSha ? `\n${reviewShaMarker(headSha)}` : '');
 
   if (!headSha) {
     // No head SHA — cannot post a review, fall back to issue comment.
@@ -203,6 +208,19 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
 
   core.info(`Trigger: automatic review | PR #${pr.number} | ${pr.head.ref} → ${pr.base.ref}`);
 
+  // Follow-up review: diff only what changed since our last review.
+  const previousReview = await findPreviousReview({ octokit: octokit2, prNumber: pr.number });
+
+  if (previousReview && previousReview.sha === pr.head.sha) {
+    core.info('No new commits since previous review — posting a no-op note instead of a full re-review');
+    await octokit2.rest.issues.createComment({
+      ...ctx.repo,
+      issue_number: pr.number,
+      body: `No new commits since the previous AI review at \`${pr.head.sha.slice(0, 7)}\` — nothing new to review. Comment \`@pi review <what to look at>\` to force a full re-review.\n${reviewShaMarker(pr.head.sha)}`,
+    });
+    return;
+  }
+
   const reviewConfig: ReviewConfig = {
     prNumber: pr.number,
     baseBranch: pr.base.ref,
@@ -213,6 +231,7 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
     apiKey,
     extraPrompt: core.getInput('extra_prompt') || '',
     message: '',
+    previousReview,
     workingDir,
     useDora: core.getInput('use_dora') !== 'false',
     systemPromptPath: core.getInput('system_prompt') || '',
@@ -277,6 +296,24 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
       pull_number: issueNumber,
     });
 
+    // Bare "@pi review" → follow-up review when we have a previous review on
+    // record. An explicit message ("@pi review focus on X") forces a full
+    // review with that focus instead.
+    let previousReview = null;
+    if (!reviewTrigger.message.trim()) {
+      previousReview = await findPreviousReview({ octokit: octokit2, prNumber: issueNumber });
+
+      if (previousReview && previousReview.sha === pr.head.sha) {
+        core.info('No new commits since previous review — skipping duplicate');
+        await octokit2.rest.issues.createComment({
+          ...ctx.repo,
+          issue_number: issueNumber,
+          body: `No new commits since the previous AI review at \`${pr.head.sha.slice(0, 7)}\` — nothing new to review. Comment \`@pi review <what to look at>\` to force a full re-review.\n${reviewShaMarker(pr.head.sha)}`,
+        });
+        return;
+      }
+    }
+
     const reviewConfig: ReviewConfig = {
       prNumber: issueNumber,
       baseBranch: pr.base.ref,
@@ -287,6 +324,7 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
       apiKey,
       extraPrompt: core.getInput('extra_prompt') || '',
       message: reviewTrigger.message,
+      previousReview,
       workingDir,
       useDora: core.getInput('use_dora') !== 'false',
       systemPromptPath: core.getInput('system_prompt') || '',

@@ -46,8 +46,9 @@ export async function runReview({ config }: { config: ReviewConfig }): Promise<s
   const ctx = gatherPrContext({
     workingDir: config.workingDir,
     baseBranch: config.baseBranch,
+    sinceSha: config.previousReview?.sha,
   });
-  const userPrompt = buildContextPrompt(ctx);
+  const userPrompt = buildContextPrompt(ctx, config.previousReview);
 
   return runAgent({
     config,

@@ -6,6 +6,12 @@ import * as core from '@actions/core';
 export type PrContextOptions = {
   workingDir: string;
   baseBranch: string;
+  /**
+   * Follow-up review: only diff changes since this SHA (the previously
+   * reviewed head). Falls back to the full base...HEAD diff when the SHA is
+   * not an ancestor of HEAD (e.g. after a rebase).
+   */
+  sinceSha?: string;
 };
 
 export type PrContext = {
@@ -15,6 +21,10 @@ export type PrContext = {
   behindBase: { sha: string; message: string }[];
   conflictingFiles: string[];
   canAutoMerge: boolean;
+  /** Effective since-SHA actually used for the incremental diff, if any. */
+  incrementalSince?: string;
+  /** New commits since the previous review (when incremental). */
+  newCommits: { sha: string; message: string }[];
 };
 
 const FULL_FILE_LIMIT = 3;
@@ -24,19 +34,55 @@ const MAX_CONTEXT_BYTES = 80_000;
 
 const DIFF_EXCLUDES = [':!*.lock', ':!*lock.json', ':!*.svg', ':!*.png'];
 
-export function gatherPrContext({ workingDir, baseBranch }: PrContextOptions): PrContext {
-  const diffArgs = ['diff', `${baseBranch}...HEAD`, '--', ...DIFF_EXCLUDES];
-  const diff = runGit(workingDir, diffArgs);
+export function gatherPrContext({ workingDir, baseBranch, sinceSha }: PrContextOptions): PrContext {
+  // Follow-up reviews diff only what changed since the previously reviewed
+  // head. Guard against the SHA disappearing from history (rebase/force-push)
+  // by requiring it to be an ancestor of HEAD — otherwise do a full review.
+  let range = `${baseBranch}...HEAD`;
+  let incrementalSince: string | undefined;
+  if (sinceSha) {
+    const { status } = runGitAllowFail(workingDir, ['merge-base', '--is-ancestor', sinceSha, 'HEAD']);
+    if (status === 0) {
+      range = `${sinceSha}..HEAD`;
+      incrementalSince = sinceSha;
+    } else {
+      core.info(`sinceSha ${sinceSha.slice(0, 7)} is not an ancestor of HEAD (rebased?) — full diff instead`);
+    }
+  }
 
-  const changedFiles = runGit(workingDir, ['diff', `${baseBranch}...HEAD`, '--name-only', '--', ...DIFF_EXCLUDES])
+  const diff = runGit(workingDir, ['diff', range, '--', ...DIFF_EXCLUDES]);
+
+  const changedFiles = runGit(workingDir, ['diff', range, '--name-only', '--', ...DIFF_EXCLUDES])
     .split('\n')
     .map((f) => f.trim())
     .filter(Boolean);
 
-  core.info(`PR context: ${changedFiles.length} changed files, ${byteLength(diff)} diff bytes`);
+  core.info(`PR context: ${changedFiles.length} changed files, ${byteLength(diff)} diff bytes${incrementalSince ? ` (incremental since ${incrementalSince.slice(0, 7)})` : ''}`);
+
+  const newCommits = incrementalSince
+    ? runGit(workingDir, ['log', `${incrementalSince}..HEAD`, '--oneline', '--no-decorate'])
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const [sha, ...rest] = line.split(/\s+/);
+          return { sha: sha ?? '', message: rest.join(' ').trim() };
+        })
+        .filter((c) => c.sha)
+    : [];
 
   const fileContents = selectFilesForContext(workingDir, changedFiles);
   const { behindBase, conflictingFiles, canAutoMerge } = checkBranchStatus(workingDir, baseBranch, changedFiles);
+
+  const mkCtx = (d: string, fc: { path: string; content: string }[]): PrContext => ({
+    diff: truncate(d, MAX_DIFF_BYTES),
+    changedFiles,
+    fileContents: fc,
+    behindBase,
+    conflictingFiles,
+    canAutoMerge,
+    incrementalSince,
+    newCommits,
+  });
 
   const totalBytes = byteLength(diff) + fileContents.reduce((s, f) => s + byteLength(f.content), 0);
   if (totalBytes > MAX_CONTEXT_BYTES) {
@@ -45,12 +91,12 @@ export function gatherPrContext({ workingDir, baseBranch }: PrContextOptions): P
     const trimmedTotal = byteLength(diff) + trimmed.reduce((s, f) => s + byteLength(f.content), 0);
     if (trimmedTotal > MAX_CONTEXT_BYTES) {
       core.info('Even trimmed context too large; using diff only');
-      return { diff: truncate(diff, MAX_DIFF_BYTES), changedFiles, fileContents: [], behindBase, conflictingFiles, canAutoMerge };
+      return mkCtx(diff, []);
     }
-    return { diff: truncate(diff, MAX_DIFF_BYTES), changedFiles, fileContents: trimmed, behindBase, conflictingFiles, canAutoMerge };
+    return mkCtx(diff, trimmed);
   }
 
-  return { diff: truncate(diff, MAX_DIFF_BYTES), changedFiles, fileContents, behindBase, conflictingFiles, canAutoMerge };
+  return mkCtx(diff, fileContents);
 }
 
 function checkBranchStatus(
@@ -164,12 +210,46 @@ function truncate(s: string, max: number): string {
 const FENCE = '```';
 const SAFER_FENCE = '``````````';
 
-export function buildContextPrompt(ctx: PrContext): string {
-  const sections: string[] = ['Review this pull request.'];
+const MAX_PREVIOUS_REVIEW_BYTES = 4000;
+
+export function buildContextPrompt(ctx: PrContext, previousReview?: { sha: string; body: string } | null): string {
+  const sections: string[] = [];
+
+  const isFollowUp = !!(previousReview && ctx.incrementalSince);
+
+  if (isFollowUp && previousReview) {
+    sections.push(
+      `# Follow-up review — verify previous findings, review only new changes`,
+      '',
+      `You already reviewed this PR at commit \`${previousReview.sha.slice(0, 7)}\`. The context below contains ONLY the changes made since then (${ctx.newCommits.length} new commit(s)). **Do NOT write a full summary again.**`,
+      '',
+      'Your tasks, in order:',
+      '1. Read your previous review below. For every finding you raised (blocker, warning, nit), check the incremental diff: is it **fixed**, **still present**, or **partially fixed**? State the verdict per finding in one short line each.',
+      '2. Review the incremental diff as a standalone change: does it introduce NEW problems? Report only NEW findings (severity + file + line as usual).',
+      '3. Confirm anything that was clearly done right in response to your feedback in one line (no more).',
+      '',
+      'Output format for this follow-up (replace the normal Summary/Risk/Architecture sections):',
+      '',
+      '### Follow-up review',
+      '**New changes:** <N commits, one-line description of what they do>',
+      '**Previous findings:** <verdict list — e.g. "✅ blocker #1 fixed (contents now read-only)", "⏳ warning #2 still present">',
+      '**New findings:** <list, or "None">',
+      '',
+      'Keep the whole thing under ~15 lines of prose (inline findings excepted). Do not restate the PR description, the architecture overview, or anything you already said.',
+      '',
+      '## Your previous review',
+      '',
+      truncate(previousReview.body, MAX_PREVIOUS_REVIEW_BYTES),
+    );
+  } else {
+    sections.push('Review this pull request.');
+  }
 
   sections.push('', '## Pre-collected context', '');
   sections.push(
-    'The diff, changed file contents, and branch status are already included below. Start your review from this context — do NOT re-run git diff or read the changed files again. Use tools only to trace references, callers, or verify external documentation that is not shown here.',
+    isFollowUp
+      ? 'The incremental diff (since your last review), changed file contents, and branch status are already included below. Start your review from this context — do NOT re-run git diff or read the changed files again. Use tools only to trace references, verify that previous findings are resolved, or check external documentation that is not shown here.'
+      : 'The diff, changed file contents, and branch status are already included below. Start your review from this context — do NOT re-run git diff or read the changed files again. Use tools only to trace references, callers, or verify external documentation that is not shown here.',
   );
 
   sections.push('', '### Changed files', '');
@@ -215,7 +295,17 @@ export function buildContextPrompt(ctx: PrContext): string {
     }
   }
 
-  sections.push('', '### Diff', '', `${FENCE}diff`, truncate(ctx.diff, MAX_DIFF_BYTES), FENCE);
+  if (ctx.incrementalSince) {
+    sections.push('', `### New commits since \`${ctx.incrementalSince.slice(0, 7)}\``, '');
+    if (ctx.newCommits.length === 0) {
+      sections.push('(none)');
+    } else {
+      for (const c of ctx.newCommits) sections.push(`- \`${c.sha.slice(0, 7)}\` ${c.message}`);
+    }
+    sections.push('', '### Incremental diff', '', `${FENCE}diff`, truncate(ctx.diff, MAX_DIFF_BYTES), FENCE);
+  } else {
+    sections.push('', '### Diff', '', `${FENCE}diff`, truncate(ctx.diff, MAX_DIFF_BYTES), FENCE);
+  }
 
   if (ctx.fileContents.length > 0) {
     sections.push('', '### Changed file contents', '');
