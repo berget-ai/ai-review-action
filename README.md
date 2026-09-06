@@ -52,8 +52,10 @@ permissions:
   pull-requests: write
   issues: write
 
+# One active review per PR: a "@berget" comment cancels an in-flight
+  # automatic review and replaces it (both review the same PR anyway).
 concurrency:
-  group: ai-review-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
