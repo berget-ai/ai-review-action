@@ -7,6 +7,20 @@ AI code review that keeps your code in Europe. Reviews run on [Berget AI](https:
 - **Open weight models** (GLM, Kimi, Qwen, Gemma…) running on EU-sovereign infrastructure
 - **Free tier** — [create an API key](https://console.berget.ai) and try it on your first PR in ~5 minutes
 
+## Using the bot
+
+Comment **`@berget`** on any PR — that's it.
+
+| Where | What you write | What happens |
+|---|---|---|
+| Pull request | _(nothing — automatic)_ | Structured code review with inline findings on the diff |
+| PR comment | `@berget` | (Re-)runs the review — incrementally, covering only new commits |
+| PR comment | `@berget focus on error handling` | Full review with a specific focus |
+| PR file comment | `@berget what does this do?` | Answers about the file in the review thread |
+| Issue / Discussion | `@berget <question>` | Explores the codebase and replies in the thread |
+
+Only repository owners, members, and collaborators can trigger the bot. After the setup below, everything else is automatic.
+
 ## Quick start (5 minutes)
 
 ### 1. Get a free API key
@@ -39,7 +53,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: ai-review-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -117,20 +131,6 @@ With `approve: 'true'`, a review with no **blocker** findings is posted as APPRO
 > **Note on required approvals:** GitHub may not count approvals from a GitHub App toward a *required approving review count* in branch rulesets (apps are not repository collaborators). The APPROVE review is still posted and visible as a green approval — whether it satisfies merge gating depends on your ruleset configuration.
 
 ---
-
-## All the ways to trigger it
-
-Mention `@berget` anywhere on GitHub to trigger a response:
-
-| Where | Trigger | What happens |
-|---|---|---|
-| Pull request | _(automatic)_ | Structured code review posted on the PR |
-| PR comment | `@berget` | Structured code review posted on the PR |
-| PR file comment | `@berget <question>` | Reads the file in context, replies in the thread |
-| Issue | `@berget <question>` | Explores the codebase, replies in the issue |
-| Discussion | `@berget <question>` | Explores the codebase, replies in the discussion |
-
-Only repository owners, members, and collaborators can trigger the action.
 
 ## More setup options
 
