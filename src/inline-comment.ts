@@ -20,5 +20,6 @@ export async function runInlineComment({
     }
   }
 
-  return runAgent({ config, systemPrompt, userPrompt, skills });
+  const { text } = await runAgent({ config, systemPrompt, userPrompt, skills });
+  return text;
 }

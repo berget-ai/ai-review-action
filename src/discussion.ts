@@ -16,5 +16,6 @@ export async function runDiscussion({ config }: { config: DiscussionConfig }): P
     }
   }
 
-  return runAgent({ config, systemPrompt, userPrompt, skills });
+  const { text } = await runAgent({ config, systemPrompt, userPrompt, skills });
+  return text;
 }

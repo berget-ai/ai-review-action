@@ -16,5 +16,6 @@ export async function runIssue({ config }: { config: IssueConfig }): Promise<str
     }
   }
 
-  return runAgent({ config, systemPrompt, userPrompt, skills });
+  const { text } = await runAgent({ config, systemPrompt, userPrompt, skills });
+  return text;
 }

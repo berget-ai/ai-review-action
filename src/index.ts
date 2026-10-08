@@ -13,6 +13,7 @@ import {
 } from './template.js';
 import { extractFindings, formatFindingComment } from './inline-findings.js';
 import { runAgent, loadDoraSkill, loadObiSkill, ProviderError } from './agent.js';
+import { emptyReviewMessage, SKIPPED_MARKER, type EmptyReason } from './empty-response.js';
 import { getInstallationToken } from './app-token.js';
 import { findPreviousReview, reviewShaMarker } from './previous-review.js';
 import type { ReviewConfig, InlineCommentConfig, IssueConfig, DiscussionConfig } from './types.js';
@@ -76,12 +77,14 @@ async function postReview({
   octokit,
   prNumber,
   body,
+  emptyReason,
   model,
   headSha,
 }: {
   octokit: Octokit;
   prNumber: number;
   body: string;
+  emptyReason?: EmptyReason;
   model: string;
   headSha?: string;
 }): Promise<void> {
@@ -93,7 +96,15 @@ async function postReview({
   // emitted inline findings without a prose summary, still post the findings
   // with a fallback summary so they are not dropped.
   if (!bodyWithoutFindings.trim() && findings.length === 0) {
-    core.warning('Skipping review: agent produced no review body and no findings. No comment posted.');
+    await postSkippedComment({
+      octokit,
+      prNumber,
+      body: wrapReviewComment({
+        body: emptyReviewMessage({ reason: emptyReason ?? { stopReason: 'unknown', blocks: [] } }),
+        model,
+        prNumber,
+      }),
+    });
     return;
   }
 
@@ -187,6 +198,37 @@ async function postReview({
   }
 }
 
+/**
+ * Tell the author the review did not happen. No SHA marker, so the next run
+ * still covers this code. Updates the previous skipped comment instead of adding
+ * one per push; only bot-authored ones, since editing anyone else's would 403.
+ */
+async function postSkippedComment({
+  octokit,
+  prNumber,
+  body,
+}: {
+  octokit: Octokit;
+  prNumber: number;
+  body: string;
+}): Promise<void> {
+  const ctx = github.context;
+  const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+    ...ctx.repo,
+    issue_number: prNumber,
+    per_page: 100,
+  });
+  const existing = comments.find((c) => c.user?.type === 'Bot' && c.body?.includes(SKIPPED_MARKER));
+
+  if (existing) {
+    await octokit.rest.issues.updateComment({ ...ctx.repo, comment_id: existing.id, body });
+    core.info(`Review skipped: updated comment ${existing.id}`);
+  } else {
+    await octokit.rest.issues.createComment({ ...ctx.repo, issue_number: prNumber, body });
+    core.info('Review skipped: posted explanation comment');
+  }
+}
+
 async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<void> {
   const payload = github.context.payload;
   const pr = payload.pull_request;
@@ -243,17 +285,16 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
     providerBaseUrl,
   };
 
-  const body = await runReview({ config: reviewConfig });
+  const { text: body, emptyReason } = await runReview({ config: reviewConfig });
 
   await postReview({
     octokit: octokit2,
     prNumber: reviewConfig.prNumber,
     body,
+    emptyReason,
     model,
     headSha: pr.head.sha,
   });
-
-  core.info('Review posted');
 }
 
 // ---------------------------------------------------------------------------
@@ -336,17 +377,17 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
       providerBaseUrl,
     };
 
-    const body = await runReview({ config: reviewConfig });
+    const { text: body, emptyReason } = await runReview({ config: reviewConfig });
 
     await postReview({
       octokit: octokit2,
       prNumber: reviewConfig.prNumber,
       body,
+      emptyReason,
       model,
       headSha: pr.head.sha,
     });
 
-    core.info('Review posted');
     return;
   }
 
