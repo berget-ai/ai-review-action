@@ -93,7 +93,7 @@ async function postReview({
   // emitted inline findings without a prose summary, still post the findings
   // with a fallback summary so they are not dropped.
   if (!bodyWithoutFindings.trim() && findings.length === 0) {
-    core.setFailed('AI review produced no output (see the warning above for why). No comment posted.');
+    core.setFailed('AI review produced no output. No comment posted.');
     return;
   }
 
@@ -344,7 +344,6 @@ async function handlePrComment({ octokit }: { octokit: Octokit }): Promise<void>
       headSha: pr.head.sha,
     });
 
-    core.info('Review posted');
     return;
   }
 

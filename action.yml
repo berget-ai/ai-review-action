@@ -185,7 +185,8 @@ runs:
         {
           "packages": [
             { "source": "${{ github.action_path }}/extensions/web-research" }
-          ]
+          ],
+          "compaction": { "reserveTokens": 32768 }
         }
         JSON
 
