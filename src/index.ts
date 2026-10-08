@@ -93,7 +93,7 @@ async function postReview({
   // emitted inline findings without a prose summary, still post the findings
   // with a fallback summary so they are not dropped.
   if (!bodyWithoutFindings.trim() && findings.length === 0) {
-    core.warning('Skipping review: agent produced no review body and no findings. No comment posted.');
+    core.setFailed('AI review produced no output (see the warning above for why). No comment posted.');
     return;
   }
 
@@ -252,8 +252,6 @@ async function handlePullRequest({ octokit }: { octokit: Octokit }): Promise<voi
     model,
     headSha: pr.head.sha,
   });
-
-  core.info('Review posted');
 }
 
 // ---------------------------------------------------------------------------

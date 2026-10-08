@@ -15,6 +15,7 @@ import {
   type ResourceDiagnostic,
 } from '@earendil-works/pi-coding-agent';
 import type { BaseConfig } from './types.js';
+import { describeEmptyResponse } from './empty-response.js';
 
 export class ProviderError extends Error {
   constructor(
@@ -72,7 +73,7 @@ function extractFinalResponse({ messages }: { messages: readonly unknown[] }): s
     if (textParts.length > 0) return textParts.join('\n');
   }
 
-  core.warning('No assistant text found in session messages');
+  core.warning(`No assistant text found in session messages (${describeEmptyResponse({ messages })})`);
   return '';
 }
 
