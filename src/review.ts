@@ -1,10 +1,10 @@
 import * as core from '@actions/core';
-import { runAgent, loadDoraSkill, loadObiSkill } from './agent.js';
+import { runAgent, loadDoraSkill, loadObiSkill, type AgentResult } from './agent.js';
 import { buildReviewSystemPrompt, loadReviewTemplate } from './prompt.js';
 import { gatherPrContext, buildContextPrompt } from './pr-context.js';
 import type { ReviewConfig } from './types.js';
 
-export async function runReview({ config }: { config: ReviewConfig }): Promise<string> {
+export async function runReview({ config }: { config: ReviewConfig }): Promise<AgentResult> {
   const reviewTemplate = loadReviewTemplate({
     reviewTemplatePath: config.reviewTemplatePath,
     workingDir: config.workingDir,

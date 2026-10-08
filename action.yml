@@ -160,7 +160,7 @@ runs:
                   "input": ["text"],
                   "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
                   "contextWindow": 131072,
-                  "maxTokens": 32768,
+                  "maxTokens": 8192,
                   "compat": {
                     "supportsDeveloperRole": false,
                     "maxTokensField": "max_tokens",
@@ -185,8 +185,7 @@ runs:
         {
           "packages": [
             { "source": "${{ github.action_path }}/extensions/web-research" }
-          ],
-          "compaction": { "reserveTokens": 32768 }
+          ]
         }
         JSON
 

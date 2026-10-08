@@ -15,7 +15,7 @@ import {
   type ResourceDiagnostic,
 } from '@earendil-works/pi-coding-agent';
 import type { BaseConfig } from './types.js';
-import { describeEmptyResponse } from './empty-response.js';
+import { describeEmptyResponse, formatEmptyReason, type EmptyReason } from './empty-response.js';
 
 export class ProviderError extends Error {
   constructor(
@@ -33,6 +33,11 @@ type RunAgentParams = {
   systemPrompt: string;
   userPrompt: string;
   skills?: Skill[];
+};
+
+export type AgentResult = {
+  text: string;
+  emptyReason?: EmptyReason;
 };
 
 function parseModelString({ model }: { model: string }): [string, string] {
@@ -61,7 +66,7 @@ function extractToolResultText({ result }: { result: unknown }): string {
   return JSON.stringify(result);
 }
 
-function extractFinalResponse({ messages }: { messages: readonly unknown[] }): string {
+function extractFinalResponse({ messages }: { messages: readonly unknown[] }): string | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i] as { role?: string; content?: unknown[] } | undefined;
     if (!msg || msg.role !== 'assistant' || !Array.isArray(msg.content)) continue;
@@ -73,8 +78,7 @@ function extractFinalResponse({ messages }: { messages: readonly unknown[] }): s
     if (textParts.length > 0) return textParts.join('\n');
   }
 
-  core.warning(`No assistant text found in session messages (${describeEmptyResponse({ messages })})`);
-  return '';
+  return null;
 }
 
 export function loadDoraSkill({ workingDir }: { workingDir: string }): Skill | null {
@@ -128,7 +132,7 @@ export async function runAgent({
   systemPrompt,
   userPrompt,
   skills = [],
-}: RunAgentParams): Promise<string> {
+}: RunAgentParams): Promise<AgentResult> {
   const [providerName, modelId] = parseModelString({ model: config.model });
   core.info(`Using model: ${providerName}/${modelId}`);
 
@@ -252,10 +256,15 @@ export async function runAgent({
   await session.prompt(userPrompt);
   core.endGroup();
 
-  const finalResponse = extractFinalResponse({ messages: session.messages as unknown[] });
+  const messages = session.messages as unknown[];
+  const text = extractFinalResponse({ messages });
   session.dispose();
 
-  return finalResponse;
+  if (text !== null) return { text };
+
+  const emptyReason = { ...describeEmptyResponse({ messages }), maxTokens: model.maxTokens };
+  core.warning(`No assistant text found in session messages (${formatEmptyReason(emptyReason)})`);
+  return { text: '', emptyReason };
 }
 
 async function checkProviderHealth(
