@@ -200,8 +200,8 @@ async function postReview({
 
 /**
  * Tell the author the review did not happen. No SHA marker, so the next run
- * still covers this code. Updates the previous skipped comment (found by marker,
- * author-agnostic) instead of adding one per push.
+ * still covers this code. Updates the previous skipped comment instead of adding
+ * one per push; only bot-authored ones, since editing anyone else's would 403.
  */
 async function postSkippedComment({
   octokit,
@@ -218,7 +218,7 @@ async function postSkippedComment({
     issue_number: prNumber,
     per_page: 100,
   });
-  const existing = comments.find((c) => c.body?.includes(SKIPPED_MARKER));
+  const existing = comments.find((c) => c.user?.type === 'Bot' && c.body?.includes(SKIPPED_MARKER));
 
   if (existing) {
     await octokit.rest.issues.updateComment({ ...ctx.repo, comment_id: existing.id, body });

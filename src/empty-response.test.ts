@@ -73,3 +73,10 @@ test('emptyReviewMessage: given the output limit is unknown, omits the token cou
 
   expect(message).toContain('the model hit its output limit before it wrote a review.');
 });
+
+test('emptyReviewMessage: given a very long provider error, caps it in the comment', () => {
+  const message = emptyReviewMessage({ reason: { stopReason: 'error', blocks: [], errorMessage: 'x'.repeat(5000) } });
+
+  expect(message).not.toContain('x'.repeat(301));
+  expect(message).toContain('x'.repeat(300));
+});
