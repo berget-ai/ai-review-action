@@ -28,7 +28,8 @@ export type ReviewOutcome = 'review' | 'review-without-comments' | 'comment-revi
  * to one review carrying the same event, with every finding in the body. A
  * refused verdict ("Can not approve your own pull request") falls back to a
  * COMMENT review. An issue comment is the last resort only: it drops the
- * verdict, and it fires an issue_comment event that can cancel this run.
+ * verdict, and in repos still on the old README concurrency group its
+ * issue_comment event cancels this run.
  */
 export async function submitReview(
   api: ReviewApi,

@@ -12,6 +12,8 @@ permissions:
   pull-requests: write
   issues: write
 
+# Only a comment that passes the job's `if` may cancel a review in progress.
+# Keep the condition in step with it.
 concurrency:
   group: >-
     ai-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}${{
