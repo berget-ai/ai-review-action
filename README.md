@@ -53,9 +53,15 @@ permissions:
   issues: write
 
 # One active review per PR: a "@berget" comment cancels an in-flight
-  # automatic review and replaces it (both review the same PR anyway).
+# automatic review and replaces it (both review the same PR anyway). Any other
+# comment, including the bot's own, gets a group of its own so it cannot
+# cancel a review in progress. Keep the condition in step with the job's `if`.
 concurrency:
-  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: >-
+    ai-review-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}${{
+    github.event_name == 'issue_comment' && !(contains(github.event.comment.body, '@berget') &&
+    contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) &&
+    format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
