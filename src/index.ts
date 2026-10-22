@@ -11,7 +11,9 @@ import {
   wrapIssueComment,
   wrapDiscussionComment,
 } from './template.js';
-import { extractFindings, formatFindingComment } from './inline-findings.js';
+import { extractFindings, formatFindingComment, type Finding } from './inline-findings.js';
+import { findingsSection, splitByDiff, type ChangedFile } from './diff-lines.js';
+import { submitReview, type ReviewEvent } from './submit-review.js';
 import { runAgent, loadDoraSkill, loadObiSkill, ProviderError } from './agent.js';
 import { emptyReviewMessage, SKIPPED_MARKER, type EmptyReason } from './empty-response.js';
 import { getInstallationToken } from './app-token.js';
@@ -66,7 +68,8 @@ function isOwnerOrMember({ association }: { association: string }): boolean {
 
 /**
  * Post the review body as either:
- *   - a pull request review with inline line comments (when findings exist)
+ *   - a pull request review with inline line comments (when findings exist);
+ *     findings outside the PR diff are listed in the review body
  *   - a plain issue comment (when no inline findings)
  *
  * When the `approve` input is true, the review event is set based on finding
@@ -111,8 +114,8 @@ async function postReview({
   const summaryBody = bodyWithoutFindings.trim() || '_AI review produced inline findings only._';
   // Hidden marker lets the next run detect the last reviewed head SHA and do
   // an incremental follow-up review instead of repeating the full summary.
-  const summary =
-    wrapReviewComment({ body: summaryBody, model, prNumber }) +
+  const summaryWith = (notInline: Finding[]) =>
+    wrapReviewComment({ body: [summaryBody, findingsSection(notInline)].filter(Boolean).join('\n\n'), model, prNumber }) +
     (headSha ? `\n${reviewShaMarker(headSha)}` : '');
 
   if (!headSha) {
@@ -120,7 +123,7 @@ async function postReview({
     await octokit.rest.issues.createComment({
       ...ctx.repo,
       issue_number: prNumber,
-      body: summary,
+      body: summaryWith(findings),
     });
     core.info('Review posted as issue comment (no head SHA)');
     return;
@@ -132,13 +135,17 @@ async function postReview({
     await octokit.rest.issues.createComment({
       ...ctx.repo,
       issue_number: prNumber,
-      body: summary,
+      body: summaryWith([]),
     });
     core.info('Review posted as issue comment (no inline findings)');
     return;
   }
 
-  const comments = findings.map((f) => ({
+  // GitHub rejects the whole review when one comment lands outside the diff,
+  // so findings on unchanged lines go into the body instead.
+  const files = await listChangedFiles(octokit, prNumber);
+  const { inDiff, outside } = files ? splitByDiff(findings, files) : { inDiff: findings, outside: [] };
+  const comments = inDiff.map((f) => ({
     path: f.file,
     line: f.line,
     side: 'RIGHT' as const,
@@ -148,7 +155,7 @@ async function postReview({
   // Determine review event:
   // - approve=false (default): always COMMENT
   // - approve=true: REQUEST_CHANGES if any blocker, else APPROVE
-  let event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES' = 'COMMENT';
+  let event: ReviewEvent = 'COMMENT';
   if (approve) {
     const hasBlocker = findings.some((f) => f.severity === 'blocker');
     event = hasBlocker ? 'REQUEST_CHANGES' : 'APPROVE';
@@ -156,45 +163,28 @@ async function postReview({
 
   core.info(`Review event: ${event} (approve=${approve})`);
 
-  // Try posting all findings as a single review first. If GitHub rejects
-  // (e.g. a line number is outside the diff context), fall back to posting
-  // each comment individually and skip the ones that fail.
+  const outcome = await submitReview(
+    {
+      createReview: (request) =>
+        octokit.rest.pulls.createReview({ ...ctx.repo, pull_number: prNumber, commit_id: headSha, ...request }),
+      createComment: (body) => octokit.rest.issues.createComment({ ...ctx.repo, issue_number: prNumber, body }),
+      warn: (message) => core.warning(message),
+    },
+    { body: summaryWith(outside), event, comments, fallbackBody: summaryWith(findings) },
+  );
+  core.info(`Review posted as ${outcome}: ${comments.length} inline, ${outside.length} outside the diff (event=${event})`);
+}
+
+async function listChangedFiles(octokit: Octokit, prNumber: number): Promise<ChangedFile[] | null> {
   try {
-    await octokit.rest.pulls.createReview({
-      ...ctx.repo,
+    return await octokit.paginate(octokit.rest.pulls.listFiles, {
+      ...github.context.repo,
       pull_number: prNumber,
-      commit_id: headSha,
-      body: summary,
-      event,
-      // Omit entirely when empty — approve-on-clean-PR posts a review
-      // without line comments.
-      ...(comments.length > 0 ? { comments } : {}),
+      per_page: 100,
     });
-    core.info(`Review posted with ${comments.length} inline comments (event=${event})`);
   } catch (err) {
-    core.warning(`createReview failed: ${(err as Error).message}. Trying individual comments...`);
-    let posted = 0;
-    for (const c of comments) {
-      try {
-        await octokit.rest.pulls.createReview({
-          ...ctx.repo,
-          pull_number: prNumber,
-          commit_id: headSha,
-          event: 'COMMENT',
-          comments: [c],
-        });
-        posted++;
-      } catch {
-        core.warning(`Skipped comment on ${c.path}:${c.line} — line not in diff`);
-      }
-    }
-    // Post the summary as an issue comment so the review body is not lost.
-    await octokit.rest.issues.createComment({
-      ...ctx.repo,
-      issue_number: prNumber,
-      body: summary,
-    });
-    core.info(`Review posted: ${posted}/${comments.length} inline comments + summary as issue comment`);
+    core.warning(`Could not list PR files: ${(err as Error).message}. Posting every finding inline.`);
+    return null;
   }
 }
 
